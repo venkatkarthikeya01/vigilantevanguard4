@@ -1,0 +1,56 @@
+{
+  "name": "pdf-ingestion-pipeline",
+  "description": "PDF Upload → Zia OCR → Entity Extraction → QuickML KB Update → Push Notification",
+  "trigger": {
+    "type": "signal",
+    "signal_name": "on-pdf-uploaded"
+  },
+  "steps": [
+    {
+      "id": "ocr-step",
+      "name": "OCR Processing",
+      "type": "function",
+      "function": "ocr-processor",
+      "timeout": 120,
+      "input": {
+        "bucket": "{{trigger.bucket}}",
+        "object_name": "{{trigger.object_name}}"
+      }
+    },
+    {
+      "id": "entity-extraction",
+      "name": "Entity Extraction via Zia",
+      "type": "function",
+      "function": "ai-orchestrator",
+      "depends_on": ["ocr-step"],
+      "input": {
+        "action": "extract_entities",
+        "text": "{{ocr-step.extracted_text}}",
+        "source": "{{trigger.object_name}}"
+      }
+    },
+    {
+      "id": "kb-update",
+      "name": "Update QuickML Knowledge Base",
+      "type": "function",
+      "function": "ai-orchestrator",
+      "depends_on": ["entity-extraction"],
+      "input": {
+        "action": "index_document",
+        "document": "{{entity-extraction.output}}",
+        "kb_name": "ksp-crime-kb"
+      }
+    },
+    {
+      "id": "notify-investigators",
+      "name": "Push Notification to Investigators",
+      "type": "push_notification",
+      "depends_on": ["kb-update"],
+      "input": {
+        "title": "New Document Indexed",
+        "body": "PDF '{{trigger.object_name}}' has been processed and added to the knowledge base.",
+        "target_role": "INVESTIGATOR"
+      }
+    }
+  ]
+}

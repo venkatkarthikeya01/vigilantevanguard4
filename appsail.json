@@ -1,0 +1,17 @@
+{
+  "service_name": "vv-backend",
+  "directory": "backend",
+  "port": 8000,
+  "runtime": "docker",
+  "dockerfile": "Dockerfile",
+  "start_command": "uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 30 --log-level info",
+  "memory": 1024,
+  "instance_count": 1,
+  "environment": {
+    "CATALYST_PROJECT_ID": "",
+    "CATALYST_ENV": "production",
+    "GEMINI_API_KEY": "",
+    "GOOGLE_MAPS_API_KEY": "",
+    "GOOGLE_GEOCODING_API_KEY": ""
+  }
+}

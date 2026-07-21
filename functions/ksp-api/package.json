@@ -1,0 +1,11 @@
+{
+  "name": "ksp-api",
+  "version": "1.0.0",
+  "description": "VigilanteVanguard KSP API — Catalyst Advanced I/O Function",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5"
+  }
+}

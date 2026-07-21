@@ -1,0 +1,87 @@
+{
+  "name": "fir-processing-pipeline",
+  "description": "New FIR → AI Classification → Similar Cases → Risk Score → Dashboard → Alert",
+  "trigger": {
+    "type": "signal",
+    "signal_name": "on-fir-created"
+  },
+  "steps": [
+    {
+      "id": "ai-classify",
+      "name": "AI Classification via QuickML",
+      "type": "function",
+      "function": "ai-orchestrator",
+      "timeout": 60,
+      "input": {
+        "action": "classify_fir",
+        "case_id": "{{trigger.CaseMasterID}}",
+        "crime_no": "{{trigger.CrimeNo}}",
+        "brief_facts": "{{trigger.BriefFacts}}"
+      }
+    },
+    {
+      "id": "similar-cases",
+      "name": "Search Similar Cases in Knowledge Base",
+      "type": "function",
+      "function": "ai-orchestrator",
+      "depends_on": ["ai-classify"],
+      "input": {
+        "action": "find_similar",
+        "brief_facts": "{{trigger.BriefFacts}}",
+        "classification": "{{ai-classify.category}}"
+      }
+    },
+    {
+      "id": "risk-score",
+      "name": "Compute AutoML Risk Score",
+      "type": "function",
+      "function": "ai-orchestrator",
+      "depends_on": ["ai-classify", "similar-cases"],
+      "input": {
+        "action": "risk_score",
+        "case_id": "{{trigger.CaseMasterID}}",
+        "classification": "{{ai-classify.output}}",
+        "similar_count": "{{similar-cases.count}}"
+      }
+    },
+    {
+      "id": "cache-invalidate",
+      "name": "Invalidate Dashboard Cache",
+      "type": "function",
+      "function": "crime-analytics",
+      "depends_on": ["risk-score"],
+      "input": {
+        "action": "invalidate_cache",
+        "district_id": "{{trigger.DistrictID}}"
+      }
+    },
+    {
+      "id": "alert-high-risk",
+      "name": "Send High-Risk Alert",
+      "type": "conditional",
+      "condition": "{{risk-score.score}} >= 70",
+      "depends_on": ["risk-score"],
+      "steps": [
+        {
+          "id": "push-alert",
+          "type": "push_notification",
+          "input": {
+            "title": "⚠️ High-Risk FIR Registered",
+            "body": "FIR {{trigger.CrimeNo}} — Risk Score: {{risk-score.score}}/100",
+            "target_role": "SUPERVISOR"
+          }
+        },
+        {
+          "id": "email-alert",
+          "type": "mail",
+          "input": {
+            "template": "high_risk_fir",
+            "crime_no": "{{trigger.CrimeNo}}",
+            "risk_score": "{{risk-score.score}}",
+            "recipients": ["vigilance@ksp.gov.in"]
+          }
+        }
+      ]
+    }
+  ]
+}

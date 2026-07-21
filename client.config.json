@@ -1,0 +1,8 @@
+{
+  "client": {
+    "app_name": "vv-frontend",
+    "directory": "frontend",
+    "build_command": "npm install && npm run build",
+    "build_path": "dist"
+  }
+}

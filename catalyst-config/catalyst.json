@@ -1,0 +1,237 @@
+{
+  "project": {
+    "name": "vigilante-vanguard",
+    "display_name": "VigilanteVanguard — Karnataka State Police Datathon",
+    "project_id": "vigilante-vanguard-ksp",
+    "description": "AI-powered crime intelligence platform for Karnataka State Police"
+  },
+  "services": {
+    "functions": {
+      "enabled": true,
+      "functions": [
+        {
+          "name": "fir-api",
+          "file": "functions/fir-api/index.js",
+          "memory": 256,
+          "timeout": 30,
+          "runtime": "nodejs18"
+        },
+        {
+          "name": "ai-orchestrator",
+          "file": "functions/ai-orchestrator/index.js",
+          "memory": 512,
+          "timeout": 60,
+          "runtime": "nodejs18"
+        },
+        {
+          "name": "auth-middleware",
+          "file": "functions/auth-middleware/index.js",
+          "memory": 128,
+          "timeout": 10,
+          "runtime": "nodejs18"
+        },
+        {
+          "name": "ocr-processor",
+          "file": "functions/ocr-processor/index.js",
+          "memory": 512,
+          "timeout": 120,
+          "runtime": "nodejs18"
+        },
+        {
+          "name": "crime-analytics",
+          "file": "functions/crime-analytics/index.js",
+          "memory": 256,
+          "timeout": 30,
+          "runtime": "nodejs18"
+        },
+        {
+          "name": "report-generator",
+          "file": "functions/report-generator/index.js",
+          "memory": 256,
+          "timeout": 60,
+          "runtime": "nodejs18"
+        }
+      ]
+    },
+    "appsail": {
+      "enabled": true,
+      "services": [
+        {
+          "name": "vv-backend",
+          "type": "docker",
+          "dockerfile": "backend/Dockerfile",
+          "port": 8000,
+          "replicas": 2,
+          "memory": "1Gi",
+          "cpu": "500m"
+        }
+      ]
+    },
+    "web_client": {
+      "enabled": true,
+      "name": "vv-frontend",
+      "build_command": "npm run build",
+      "build_output": "dist",
+      "directory": "frontend"
+    },
+    "data_store": {
+      "enabled": true
+    },
+    "nosql": {
+      "enabled": true,
+      "tables": [
+        "conversation_history",
+        "ai_context",
+        "session_state",
+        "investigation_notes",
+        "cached_intelligence"
+      ]
+    },
+    "stratus": {
+      "enabled": true,
+      "buckets": [
+        {
+          "name": "crime-pdfs",
+          "description": "Historical crime review PDFs and FIR attachments"
+        },
+        {
+          "name": "evidence",
+          "description": "Evidence files: images, videos, audio"
+        },
+        {
+          "name": "reports",
+          "description": "Generated intelligence reports and exports"
+        },
+        {
+          "name": "ocr-outputs",
+          "description": "Extracted text from OCR processing"
+        }
+      ]
+    },
+    "cache": {
+      "enabled": true,
+      "segments": [
+        "fir-cache",
+        "offender-cache",
+        "hotspot-cache",
+        "dashboard-cache",
+        "ai-response-cache"
+      ]
+    },
+    "authentication": {
+      "enabled": true,
+      "providers": ["email_password"],
+      "roles": [
+        "INVESTIGATOR",
+        "ANALYST",
+        "SUPERVISOR",
+        "ADMINISTRATOR",
+        "POLICYMAKER"
+      ]
+    },
+    "quickml": {
+      "enabled": true,
+      "knowledge_bases": [
+        {
+          "name": "ksp-crime-kb",
+          "description": "Karnataka Police crime records, FIRs, and intelligence documents"
+        }
+      ]
+    },
+    "cron": {
+      "enabled": true,
+      "jobs": [
+        {
+          "name": "daily-intelligence-report",
+          "schedule": "0 6 * * *",
+          "function": "report-generator",
+          "description": "Generate and email daily crime intelligence briefing"
+        },
+        {
+          "name": "rebuild-embeddings",
+          "schedule": "0 2 * * *",
+          "function": "ai-orchestrator",
+          "description": "Rebuild knowledge base embeddings with new FIR data"
+        },
+        {
+          "name": "refresh-hotspot-analysis",
+          "schedule": "0 */4 * * *",
+          "function": "crime-analytics",
+          "description": "Refresh crime hotspot calculations every 4 hours"
+        },
+        {
+          "name": "cache-cleanup",
+          "schedule": "0 3 * * *",
+          "function": "crime-analytics",
+          "description": "Purge stale cache segments"
+        },
+        {
+          "name": "automl-prediction-refresh",
+          "schedule": "0 1 * * 0",
+          "function": "ai-orchestrator",
+          "description": "Weekly crime prediction model refresh via Zia AutoML"
+        }
+      ]
+    },
+    "signals": {
+      "enabled": true,
+      "triggers": [
+        {
+          "name": "on-fir-created",
+          "event": "datastore.insert",
+          "table": "CaseMaster",
+          "circuit": "fir-processing-pipeline"
+        },
+        {
+          "name": "on-pdf-uploaded",
+          "event": "stratus.upload",
+          "bucket": "crime-pdfs",
+          "circuit": "pdf-ingestion-pipeline"
+        },
+        {
+          "name": "on-user-registered",
+          "event": "auth.user_created",
+          "function": "auth-middleware"
+        }
+      ]
+    },
+    "circuits": {
+      "enabled": true
+    },
+    "mail": {
+      "enabled": true
+    },
+    "push": {
+      "enabled": true
+    },
+    "smartbrowz": {
+      "enabled": true
+    },
+    "connections": {
+      "enabled": true,
+      "connections": [
+        {
+          "name": "google-maps",
+          "provider": "google",
+          "scopes": ["maps", "geocoding", "places"]
+        },
+        {
+          "name": "gmail-alerts",
+          "provider": "google",
+          "scopes": ["gmail.send"]
+        }
+      ]
+    },
+    "pipelines": {
+      "enabled": true,
+      "pipelines": [
+        {
+          "name": "main-pipeline",
+          "trigger": "push",
+          "branch": "main",
+          "stages": ["build", "test", "deploy"]
+        }
+      ]
+    }
+  }
+}
