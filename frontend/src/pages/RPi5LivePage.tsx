@@ -456,17 +456,19 @@ export default function RPi5LivePage() {
              <button
                onClick={() => switchTo('usb')}
                disabled={switching || activeCam === 'usb' || !piOnline}
-                className={cn(
-                  'flex flex-col items-center gap-1 py-3 rounded-xl text-xs font-bold transition-all border',
-                  activeCam === 'ip'
-                    ? 'bg-green-700 border-green-500 text-white cursor-default'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-green-900/40 hover:border-green-700 hover:text-green-300',
-                  switching && 'opacity-50',
-                )}>
-                <Wifi className="h-5 w-5" />
-                <span>IP Cam</span>
-                {activeCam === 'ip' && <span className="text-[9px] text-green-300 font-normal">● Active</span>}
-              </button>
+               className={cn(
+                 'flex flex-col items-center gap-1 py-3 rounded-xl text-xs font-bold transition-all border',
+                 activeCam === 'usb'
+                   ? 'bg-blue-700 border-blue-500 text-white cursor-default'
+                   : !piOnline
+                   ? 'bg-gray-800 border-gray-700 text-gray-600 cursor-not-allowed opacity-50'
+                   : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-blue-900/40 hover:border-blue-700 hover:text-blue-300',
+                 switching && 'opacity-50',
+               )}>
+               <Camera className="h-5 w-5" />
+               <span>USB C270</span>
+               {activeCam === 'usb' && <span className="text-[9px] text-blue-300 font-normal">● Active</span>}
+             </button>
             </div>
             {switching && (
               <p className="text-[10px] text-blue-400 text-center animate-pulse">Switching camera…</p>
