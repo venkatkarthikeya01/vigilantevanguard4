@@ -15,8 +15,41 @@ import hashlib
 # ── FastAPI bootstrap ──────────────────────────────────────────
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 import uvicorn
+
+# ── CCTV module ───────────────────────────────────────────────
+try:
+    from app.routers.cctv import (
+        router as cctv_router,
+        start_cctv_simulation, stop_cctv_simulation,
+        _auto_retrain_loop,
+    )
+    _CCTV_OK = True
+except Exception as _cctv_err:
+    _CCTV_OK = False
+    _auto_retrain_loop = None  # type: ignore
+    print(f"[CCTV] Module load warning: {_cctv_err}")
+
+# ── Training module ───────────────────────────────────────────
+try:
+    from app.routers.training import router as training_router, start_watchdog, stop_watchdog
+    _TRAINING_OK = True
+except Exception as _train_err:
+    _TRAINING_OK = False
+    print(f"[Training] Module load warning: {_train_err}")
+    async def start_watchdog(): pass  # type: ignore
+    async def stop_watchdog():  pass  # type: ignore
+
+# ── RPi5 integration module ───────────────────────────────────
+try:
+    from app.routers.rpi import router as rpi_router
+    _RPI_OK = True
+except Exception as _rpi_err:
+    _RPI_OK = False
+    print(f"[RPi5] Module load warning: {_rpi_err}")
 
 # ── pydantic ──────────────────────────────────────────────────
 try:
@@ -44,24 +77,46 @@ _MEMORY_FIRS: list = []
 _MEMORY_LOGS: list = []
 _FIR_COUNTER = 0
 
-# ── Token secret ──────────────────────────────────────────────
-_TOKEN_SECRET = "vv_ksp_demo_2026"
+# ── Token secret — read from env in production ───────────────
+_TOKEN_SECRET = os.environ.get("VV_TOKEN_SECRET", "vv_ksp_demo_2026")
 
-# ── Demo users ────────────────────────────────────────────────
+# ── Demo users — kept in sync with auth.py router's _BRANCH_USERS ────────────
+# Branch IDs: HQ=admin, BLR_CITY, BLR_SOUTH, MYS_CITY, HBL_CITY, etc.
 _USERS = {
-    "admin@ksp.gov.in":              {"password": "admin123",       "role": "ADMINISTRATOR", "name": "Admin Officer",    "district_id": 5},
-    "venkat.25cse@cambridge.edu.in": {"password": "Karthi@007",     "role": "ADMINISTRATOR", "name": "Venkat (Admin)",   "district_id": 5},
-    "raj.kumar@ksp.gov.in":          {"password": "Inspector@123",  "role": "INVESTIGATOR",  "name": "Insp. Raj Kumar",  "district_id": 5},
-    "priya.sharma@ksp.gov.in":       {"password": "Analyst@123",    "role": "ANALYST",       "name": "Priya Sharma",     "district_id": 1},
-    "suresh.babu@ksp.gov.in":        {"password": "Supervisor@123", "role": "SUPERVISOR",    "name": "DSP Suresh Babu",  "district_id": 5},
-    "inspector@ksp.gov.in":          {"password": "pass123",        "role": "INVESTIGATOR",  "name": "S.K. Ravi Kumar",  "district_id": 5},
-    "analyst@ksp.gov.in":            {"password": "pass123",        "role": "ANALYST",       "name": "Priya Nair",       "district_id": 1},
-    "supervisor@ksp.gov.in":         {"password": "pass123",        "role": "SUPERVISOR",    "name": "DSP Venkatesh",    "district_id": 5},
+    "admin@ksp.gov.in":              {"password": "admin123",       "role": "ADMINISTRATOR", "name": "State Admin",       "branch_id": "HQ",       "district_id": 0},
+    "venkat.25cse@cambridge.edu.in": {"password": "Karthi@007",     "role": "ADMINISTRATOR", "name": "Venkat (Admin)",    "branch_id": "HQ",       "district_id": 0},
+    "blr.city.admin@ksp.gov.in":     {"password": "BLR@City1",      "role": "ADMINISTRATOR", "name": "BLR City Admin",    "branch_id": "BLR_CITY", "district_id": 5},
+    "blr.south.supervisor@ksp.gov.in": {"password": "BLR@South1",   "role": "SUPERVISOR",    "name": "DSP BLR South",     "branch_id": "BLR_SOUTH","district_id": 5},
+    "mys.admin@ksp.gov.in":          {"password": "MYS@Admin1",     "role": "ADMINISTRATOR", "name": "Mysuru City Admin", "branch_id": "MYS_CITY", "district_id": 12},
+    "mys.supervisor@ksp.gov.in":     {"password": "MYS@Sup1",       "role": "SUPERVISOR",    "name": "DSP Mysuru City",   "branch_id": "MYS_CITY", "district_id": 12},
+    "hbl.admin@ksp.gov.in":          {"password": "HBL@Admin1",     "role": "ADMINISTRATOR", "name": "Hubballi Admin",    "branch_id": "HBL_CITY", "district_id": 10},
+    # legacy
+    "raj.kumar@ksp.gov.in":          {"password": "Inspector@123",  "role": "INVESTIGATOR",  "name": "Insp. Raj Kumar",   "branch_id": "BLR_CITY", "district_id": 5},
+    "priya.sharma@ksp.gov.in":       {"password": "Analyst@123",    "role": "ANALYST",       "name": "Priya Sharma",      "branch_id": "MYS_CITY", "district_id": 12},
+    "suresh.babu@ksp.gov.in":        {"password": "Supervisor@123", "role": "SUPERVISOR",    "name": "DSP Suresh Babu",   "branch_id": "BLR_CITY", "district_id": 5},
+    "inspector@ksp.gov.in":          {"password": "pass123",        "role": "INVESTIGATOR",  "name": "S.K. Ravi Kumar",   "branch_id": "BLR_SOUTH","district_id": 5},
+    "analyst@ksp.gov.in":            {"password": "pass123",        "role": "ANALYST",       "name": "Priya Nair",        "branch_id": "MYS_CITY", "district_id": 12},
+    "supervisor@ksp.gov.in":         {"password": "pass123",        "role": "SUPERVISOR",    "name": "DSP Venkatesh",     "branch_id": "BLR_CITY", "district_id": 5},
+}
+
+_BRANCH_NAMES = {
+    "HQ": "State HQ / Karnataka Police HQ",
+    "BLR_CITY": "Bengaluru City Police", "BLR_SOUTH": "Bengaluru South Division",
+    "BLR_NORTH": "Bengaluru North Division", "BLR_EAST": "Bengaluru East Division",
+    "BLR_WEST": "Bengaluru West Division", "MYS_CITY": "Mysuru City Police",
+    "HBL_CITY": "Hubballi-Dharwad City Police", "MGD_DIST": "Mangaluru District Police",
+    "BLG_DIST": "Belagavi District Police", "SHG_DIST": "Shivamogga District Police",
+    "GUL_DIST": "Kalaburagi District Police",
 }
 
 def _make_token(email: str, user: dict, uid: str) -> str:
-    payload = json.dumps({"user_id": uid, "email": email, "role": user["role"],
-                          "display_name": user["name"], "district_id": user["district_id"], "type": "vv_demo"})
+    branch_id = user.get("branch_id")
+    payload = json.dumps({
+        "user_id": uid, "email": email, "role": user["role"],
+        "display_name": user["name"], "district_id": user.get("district_id", 0),
+        "branch_id": branch_id, "branch_name": _BRANCH_NAMES.get(branch_id or "", ""),
+        "type": "vv_demo",
+    })
     b64 = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
     sig = hmac.new(_TOKEN_SECRET.encode(), b64.encode(), hashlib.sha256).hexdigest()[:16]
     return f"{b64}.{sig}"
@@ -122,26 +177,64 @@ async def _ds_query(sql: str) -> list:
 # ── App setup ─────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     _try_init_catalyst()
-    print(f"[OK] VigilanteVanguard v4.1 started — Python {sys.version.split()[0]}")
+    if _CCTV_OK:
+        await start_cctv_simulation()
+        # Start the background auto-retrain loop (every 6 h)
+        if _auto_retrain_loop is not None:
+            from app.routers import cctv as _cctv_mod
+            _cctv_mod._AUTO_RETRAIN_TASK = asyncio.create_task(_auto_retrain_loop())
+    if _TRAINING_OK:
+        await start_watchdog()
+    print(f"[OK] VigilanteVanguard v5.0 started — Python {sys.version.split()[0]}")
     yield
+    if _CCTV_OK:
+        await stop_cctv_simulation()
+        from app.routers import cctv as _cctv_mod
+        if _cctv_mod._AUTO_RETRAIN_TASK and not _cctv_mod._AUTO_RETRAIN_TASK.done():
+            _cctv_mod._AUTO_RETRAIN_TASK.cancel()
+    if _TRAINING_OK:
+        await stop_watchdog()
     print("[OK] stopped")
 
 app = FastAPI(
     title="VigilanteVanguard API",
     description="Karnataka State Police Datathon 2026 — Zoho Catalyst AppSail",
-    version="4.1.0",
+    version="5.1.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
 )
 
+# CORS: allow all in dev (no CATALYST_PROJECT_ID), restrict to real origins in prod
+_is_prod = os.environ.get("VV_PROJECT_ID", os.environ.get("CATALYST_PROJECT_ID", "")).strip().isdigit()
+_origins = (
+    [o.strip() for o in os.environ.get("ALLOWED_ORIGINS_STR", "").split(",") if o.strip()]
+    if _is_prod
+    else ["*"]
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], allow_credentials=False,
-    allow_methods=["*"], allow_headers=["*"],
+    allow_origins=_origins if _is_prod else ["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+# ── Mount CCTV module ─────────────────────────────────────────
+if _CCTV_OK:
+    app.include_router(cctv_router)
+
+# ── Mount Training module ──────────────────────────────────────
+if _TRAINING_OK:
+    app.include_router(training_router)
+
+# ── Mount RPi5 integration module ─────────────────────────────
+if _RPI_OK:
+    app.include_router(rpi_router)
+    print("[RPi5] Integration module mounted at /api/v1/rpi")
 
 @app.middleware("http")
 async def log_request(request: Request, call_next):
@@ -195,9 +288,10 @@ class AIQuery(BaseModel):
 # ── Health ────────────────────────────────────────────────────
 @app.get("/api/health")
 async def health():
-    return {"status": "healthy", "service": "VigilanteVanguard", "version": "4.1.0",
+    return {"status": "healthy", "service": "VigilanteVanguard", "version": "5.1.0",
             "platform": "Zoho Catalyst AppSail", "catalyst_sdk": _CATALYST_OK,
-            "python": sys.version.split()[0], "in_memory_firs": len(_MEMORY_FIRS)}
+            "python": sys.version.split()[0], "in_memory_firs": len(_MEMORY_FIRS),
+            "modules": {"cctv": _CCTV_OK, "training": _TRAINING_OK, "rpi5": _RPI_OK}}
 
 
 # ── Auth ──────────────────────────────────────────────────────
@@ -209,8 +303,13 @@ async def login(data: LoginReq):
         raise HTTPException(401, "Invalid credentials")
     uid = str(list(_USERS.keys()).index(email) + 1)
     token = _make_token(email, u, uid)
-    return {"token": token, "user": {"user_id": uid, "email": email, "role": u["role"],
-                                     "display_name": u["name"], "district_id": u["district_id"]}}
+    branch_id = u.get("branch_id")
+    return {"token": token, "user": {
+        "user_id": uid, "email": email, "role": u["role"],
+        "display_name": u["name"], "district_id": u.get("district_id", 0),
+        "branch_id": branch_id, "branch_name": _BRANCH_NAMES.get(branch_id or "", ""),
+        "is_admin": u["role"] == "ADMINISTRATOR" or branch_id in (None, "HQ"),
+    }}
 
 @app.get("/api/v1/auth/me")
 async def me():
@@ -342,6 +441,38 @@ async def search(q: str = ""):
     return {"results": db_results or results, "query": q, "total": len(db_results or results)}
 
 
-# ── Entry point ────────────────────────────────────────────────
+# ── Serve React frontend from dist/ ──────────────────────────
+# On AppSail the Docker WORKDIR is /app (the backend folder).
+# The frontend dist/ is copied into /app/frontend/dist during the build.
+# Locally it sits at ../frontend/dist relative to main.py.
+_DIST_CANDIDATES = [
+    os.path.join(os.path.dirname(__file__), "frontend", "dist"),         # AppSail: /app/frontend/dist
+    os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"),   # local dev: ../frontend/dist
+]
+_DIST = next((d for d in _DIST_CANDIDATES if os.path.isdir(os.path.normpath(d))), None)
+
+if _DIST:
+    _DIST = os.path.normpath(_DIST)
+    _ASSETS = os.path.join(_DIST, "assets")
+    if os.path.isdir(_ASSETS):
+        app.mount("/assets", StaticFiles(directory=_ASSETS), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(request: Request, full_path: str = ""):
+        # Let all /api/* routes fall through to their registered handlers
+        if full_path.startswith("api/"):
+            raise HTTPException(404, "API route not found")
+        index = os.path.join(_DIST, "index.html")
+        if os.path.exists(index):
+            return FileResponse(index)
+        return {"error": "Frontend dist/ not found — run: cd frontend && npm run build"}
+
+    print(f"[Frontend] Serving React SPA from {_DIST}")
+else:
+    print("[Frontend] dist/ not found — API-only mode. Run: cd frontend && npm run build")
+
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

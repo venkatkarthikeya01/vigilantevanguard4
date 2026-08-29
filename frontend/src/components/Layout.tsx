@@ -2,11 +2,12 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/store/auth'
 import { useDemoStore } from '@/store/demo'
 import { useLiveFeed } from '@/hooks/useLiveFeed'
+import { useCCTVStore } from '@/store/cctv'
 import {
   LayoutDashboard, FileText, Map, Bot, BarChart3, FileBarChart,
   LogOut, Shield, Bell, UserX, GitCompare, Flame, Phone,
   Building2, GitBranch, Calendar, FolderOpen, BookOpen, Languages,
-  Radio,
+  Radio, Video, BrainCircuit, BarChart2, Camera, Film, Cpu,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useLangStore } from '@/store/lang'
@@ -20,12 +21,19 @@ const LANG_OPTIONS: { code: Lang; label: string; short: string }[] = [
 
 // Two groups for visual separation
 const NAV_PRIMARY = [
-  { to: '/',           label: 'Dashboard',       icon: LayoutDashboard },
-  { to: '/fir',        label: 'FIR Management',  icon: FileText },
-  { to: '/casefile',   label: 'Case Files',       icon: FolderOpen },
-  { to: '/map',        label: 'Crime Map',        icon: Map },
-  { to: '/hotspot',    label: 'Hotspot Predictor',icon: Flame },
-  { to: '/sos',        label: 'Emergency SOS',    icon: Phone },
+  { to: '/',               label: 'Dashboard',            icon: LayoutDashboard },
+  { to: '/fir',            label: 'FIR Management',       icon: FileText },
+  { to: '/casefile',       label: 'Case Files',           icon: FolderOpen },
+  { to: '/map',            label: 'Crime Map',            icon: Map },
+  { to: '/hotspot',        label: 'Hotspot Predictor',    icon: Flame },
+  { to: '/sos',            label: 'Emergency SOS',        icon: Phone },
+  { to: '/cctv',           label: 'AI CCTV Surveillance', icon: Video },
+  { to: '/cameras',        label: 'Camera Management',    icon: Camera },
+  { to: '/footage',        label: 'Evidence Footage',     icon: Film },
+  { to: '/rpi5',           label: 'RPi5 Live View',       icon: Cpu },
+  { to: '/notifications',  label: 'Police Alerts',        icon: Bell },
+  { to: '/training',       label: 'AI Training Studio',   icon: BrainCircuit },
+  { to: '/heatmap',        label: 'Incident Heatmap',     icon: BarChart2 },
 ]
 
 const NAV_SECONDARY = [
@@ -46,6 +54,7 @@ export default function Layout() {
   const { lang, setLang } = useLangStore()
   const { unreadCount, markAllRead, selectedStation } = useDemoStore()
   const { lastEvent, events } = useLiveFeed()
+  const { alertCount, clearAlerts, notifUnread, criticalUnread } = useCCTVStore()
 
   const handleLogout = () => {
     logout()
@@ -91,7 +100,18 @@ export default function Layout() {
               }
             >
               <Icon className="h-4 w-4 flex-shrink-0" />
-              <span className="truncate">{label}</span>
+              <span className="truncate flex-1">{label}</span>
+              {/* Notification badge on Police Alerts */}
+              {to === '/notifications' && notifUnread > 0 && (
+                <span className={cn(
+                  'text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0',
+                  criticalUnread > 0
+                    ? 'bg-red-500 text-white animate-pulse'
+                    : 'bg-orange-500 text-white'
+                )}>
+                  {notifUnread > 9 ? '9+' : notifUnread}
+                </span>
+              )}
             </NavLink>
           ))}
 
@@ -207,13 +227,16 @@ export default function Layout() {
 
           <button
             className="relative text-gray-400 hover:text-white transition-colors"
-            onClick={markAllRead}
+            onClick={() => { markAllRead(); clearAlerts(); navigate('/notifications') }}
             title="Notifications"
           >
             <Bell className="h-4 w-4" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 rounded-full h-3.5 w-3.5 text-[9px] flex items-center justify-center font-bold">
-                {unreadCount > 9 ? '9+' : unreadCount}
+            {(unreadCount + alertCount + notifUnread) > 0 && (
+              <span className={cn(
+                'absolute -top-1 -right-1 rounded-full h-3.5 w-3.5 text-[9px] flex items-center justify-center font-bold',
+                criticalUnread > 0 ? 'bg-red-500 animate-pulse' : 'bg-red-500'
+              )}>
+                {(unreadCount + alertCount + notifUnread) > 9 ? '9+' : (unreadCount + alertCount + notifUnread)}
               </span>
             )}
           </button>

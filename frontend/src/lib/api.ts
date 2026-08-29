@@ -1,7 +1,13 @@
 import axios from 'axios'
 import { useAuthStore } from '@/store/auth'
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+// Always use a relative base URL so the Vite dev-server proxy (port 3000 → 8000)
+// handles the request. An absolute URL like http://localhost:8000 causes network
+// errors when the browser security model blocks cross-origin requests, or when
+// VITE_API_URL is not set in the .env file.
+const BASE_URL = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL           // explicit override (e.g. production)
+  : '/api/v1'                               // relative — always works via Vite proxy
 
 export const apiClient = axios.create({
   baseURL: BASE_URL,

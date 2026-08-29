@@ -13,11 +13,20 @@
       "dockerfile": "Dockerfile",
       "memory": 1024,
       "instance_count": 1,
+      "start_command": "uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 75 --log-level info",
       "env": [
         "CATALYST_PROJECT_ID",
         "CATALYST_ENV",
         "GEMINI_API_KEY",
-        "GOOGLE_MAPS_API_KEY"
+        "GOOGLE_MAPS_API_KEY",
+        "GOOGLE_GEOCODING_API_KEY",
+        "VV_TOKEN_SECRET",
+        "VV_TRAINING_DATA_DIR",
+        "ALLOWED_ORIGINS_STR",
+        "MSG91_AUTH_KEY",
+        "MSG91_SENDER_ID",
+        "MSG91_TEMPLATE_ID",
+        "CATALYST_STRATUS_BUCKET_TRAINING"
       ]
     }
   ],

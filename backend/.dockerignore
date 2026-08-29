@@ -1,0 +1,30 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+!.env.example
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.git/
+.gitignore
+
+# Large model + training artifacts — not needed at runtime startup
+# (they are rebuilt on first benchmark run or loaded from the mounted volume)
+training_data/
+yolov8n.pt
+backend.zip
+vv-backend-deploy.zip
+
+# Dev/test scripts
+test_*.py
+_diag.py
+run_*.py
+generate_*.py
+
+# Logs
+*.log

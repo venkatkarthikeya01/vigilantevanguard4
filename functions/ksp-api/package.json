@@ -1,10 +1,11 @@
 {
   "name": "ksp-api",
-  "version": "1.0.0",
-  "description": "VigilanteVanguard KSP API — Catalyst Advanced I/O Function",
+  "version": "2.0.0",
+  "description": "VigilanteVanguard KSP API — Catalyst Advanced I/O Function (RPi5 integration)",
   "main": "index.js",
   "scripts": { "start": "node index.js" },
   "dependencies": {
+    "zcatalyst-sdk-node": "*",
     "express": "^4.19.2",
     "cors": "^2.8.5"
   }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLiveFeed } from "@/hooks/useLiveFeed";
+import { apiClient } from "@/lib/api";
 import {
   Shield,
   Phone,
@@ -15,6 +16,9 @@ import {
   CheckCircle2,
   Clock,
   Zap,
+  FlaskConical,
+  Save,
+  RefreshCw,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -169,6 +173,181 @@ const STATUS_CARDS = [
     bg: "bg-yellow-500/10",
   },
 ];
+
+// ─── Test Contacts LS key ─────────────────────────────────────────────────────
+const TC_KEY = 'vv_test_contacts'
+
+interface TestContacts {
+  police:    string
+  ambulance: string
+  fire:      string
+  extra:     string
+  extraName: string
+}
+
+function loadTestContacts(): TestContacts {
+  try {
+    const raw = localStorage.getItem(TC_KEY)
+    if (raw) return { ...defaultTC(), ...JSON.parse(raw) }
+  } catch { /* ignore */ }
+  return defaultTC()
+}
+
+function defaultTC(): TestContacts {
+  return { police: '', ambulance: '', fire: '', extra: '', extraName: 'Friend' }
+}
+
+function saveTestContacts(tc: TestContacts) {
+  try { localStorage.setItem(TC_KEY, JSON.stringify(tc)) } catch { /* ignore */ }
+}
+
+// ─── Test Contacts Panel ──────────────────────────────────────────────────────
+function TestContactsPanel() {
+  const [tc,      setTc]      = useState<TestContacts>(loadTestContacts)
+  const [saved,   setSaved]   = useState(false)
+  const [pushing, setPushing] = useState(false)
+  const [pushMsg, setPushMsg] = useState('')
+
+  const update = (k: keyof TestContacts, v: string) =>
+    setTc(prev => ({ ...prev, [k]: v }))
+
+  const handleSave = () => {
+    saveTestContacts(tc)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  // Push numbers to RPi5 .env via backend
+  const handlePushToRpi = async () => {
+    setPushing(true)
+    setPushMsg('')
+    try {
+      await apiClient.post('/rpi/test-contacts', {
+        POLICE_NUMBER:    tc.police    || '100',
+        AMBULANCE_NUMBER: tc.ambulance || '108',
+        FIRE_NUMBER:      tc.fire      || '101',
+        EXTRA_NUMBER:     tc.extra,
+        EXTRA_NAME:       tc.extraName,
+      })
+      setPushMsg('✓ Pushed to RPi5 .env — restart pipeline to apply')
+    } catch {
+      setPushMsg('⚠ Could not reach RPi5 backend — numbers saved locally only')
+    }
+    setPushing(false)
+    setTimeout(() => setPushMsg(''), 5000)
+  }
+
+  const fields: { key: keyof TestContacts; label: string; placeholder: string; sub: string }[] = [
+    { key: 'police',    label: 'Police / Test Friend 1', placeholder: '+91XXXXXXXXXX or 100', sub: 'Replaces 100 during testing' },
+    { key: 'ambulance', label: 'Ambulance / Test Friend 2', placeholder: '+91XXXXXXXXXX or 108', sub: 'Replaces 108 during testing' },
+    { key: 'fire',      label: 'Fire / Test Friend 3', placeholder: '+91XXXXXXXXXX or 101', sub: 'Replaces 101 during testing' },
+    { key: 'extra',     label: 'Extra Contact', placeholder: '+91XXXXXXXXXX', sub: 'Custom number for demo alerts' },
+  ]
+
+  return (
+    <section>
+      <div className="rounded-xl bg-gray-900 border border-amber-700/40 p-5">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-1">
+          <FlaskConical className="w-4 h-4 text-amber-400" />
+          <h2 className="text-base font-semibold text-gray-100">
+            Test / Demo Emergency Contacts
+          </h2>
+          <span className="ml-2 text-[10px] font-bold px-2 py-0.5 rounded-full
+                           bg-amber-900/40 border border-amber-700/50 text-amber-300">
+            TESTING ONLY
+          </span>
+        </div>
+        <p className="text-xs text-gray-400 mb-4">
+          Enter your friends' numbers here. The RPi5 will call/SMS these instead of
+          100 / 108 / 101 while testing. Leave blank to use the real emergency numbers.
+        </p>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          {fields.map(({ key, label, placeholder, sub }) => (
+            <div key={key}>
+              <label className="block text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">
+                {label}
+              </label>
+              <input
+                type="tel"
+                value={tc[key]}
+                onChange={e => update(key, e.target.value)}
+                placeholder={placeholder}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2
+                           text-sm text-white placeholder-gray-600 font-mono
+                           focus:outline-none focus:border-amber-500"
+              />
+              <p className="text-[10px] text-gray-600 mt-0.5">{sub}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Extra contact name */}
+        <div className="mt-3 max-w-xs">
+          <label className="block text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-1">
+            Extra Contact Name
+          </label>
+          <input
+            type="text"
+            value={tc.extraName}
+            onChange={e => update('extraName', e.target.value)}
+            placeholder="Friend / Supervisor"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2
+                       text-sm text-white placeholder-gray-600
+                       focus:outline-none focus:border-amber-500"
+          />
+        </div>
+
+        {/* Buttons */}
+        <div className="flex flex-wrap items-center gap-3 mt-4">
+          <button
+            onClick={handleSave}
+            className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg
+                       bg-amber-700 hover:bg-amber-600 text-white transition-colors"
+          >
+            <Save className="w-3.5 h-3.5" />
+            {saved ? 'Saved ✓' : 'Save Locally'}
+          </button>
+
+          <button
+            onClick={handlePushToRpi}
+            disabled={pushing}
+            className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-lg
+                       bg-blue-700 hover:bg-blue-600 disabled:opacity-50 text-white transition-colors"
+          >
+            {pushing
+              ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              : <Send className="w-3.5 h-3.5" />}
+            Push to RPi5
+          </button>
+
+          {pushMsg && (
+            <p className={`text-xs ${pushMsg.startsWith('✓') ? 'text-green-400' : 'text-yellow-400'}`}>
+              {pushMsg}
+            </p>
+          )}
+        </div>
+
+        {/* Current active numbers summary */}
+        <div className="mt-4 rounded-lg bg-gray-800/50 border border-gray-700 p-3 grid grid-cols-3 gap-3 text-center">
+          {[
+            { label: 'Police', num: tc.police || '100 (real)' },
+            { label: 'Ambulance', num: tc.ambulance || '108 (real)' },
+            { label: 'Fire', num: tc.fire || '101 (real)' },
+          ].map(({ label, num }) => (
+            <div key={label}>
+              <p className="text-[9px] text-gray-500 uppercase tracking-widest">{label}</p>
+              <p className={`text-sm font-bold font-mono mt-0.5 ${
+                num.includes('real') ? 'text-gray-500' : 'text-amber-300'
+              }`}>{num}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -374,6 +553,9 @@ export default function SOSPage() {
           </ul>
         </div>
       </section>
+
+      {/* ── Test / Demo Emergency Contacts ───────────────────────────────── */}
+      <TestContactsPanel />
 
       {/* ── Officer Broadcast Form ────────────────────────────────────────── */}
       <section>

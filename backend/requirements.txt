@@ -1,5 +1,23 @@
 fastapi==0.111.0
-uvicorn==0.30.1
+uvicorn[standard]==0.30.1
 pydantic==2.7.4
+pydantic-settings==2.3.4
 httpx==0.27.0
+python-multipart==0.0.9
 zcatalyst-sdk==1.0.0
+# OpenCV — headless (no GUI) for server/container use
+# 4.x is the stable release; 5.x is not yet on PyPI as of 2026
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+# Multi-algorithm ML benchmark + production classifiers (RF primary, SVM secondary)
+scikit-learn>=1.4.0
+# Supervision 0.31.0.dev0 — object tracking (ByteTrack) + Detections wrapper
+# Install from local extracted repo on RPi5:
+#   pip3 install --break-system-packages ~/supervision-develop/supervision-develop pydeprecate scipy
+# On AppSail/cloud: pure supervision wheel (no Hailo) — only used for dashboard metrics
+pydeprecate>=0.9
+scipy>=1.10.0
+# YOLO object detection (PRIMARY cloud model) — enables upload + fine-tune + live inference
+# Comment this out if AppSail has memory constraints (< 512 MB RAM)
+ultralytics>=8.3.0
+pyyaml>=6.0.0

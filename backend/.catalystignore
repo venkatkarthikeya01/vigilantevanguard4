@@ -9,3 +9,11 @@ dist/
 build/
 .pytest_cache/
 .mypy_cache/
+# Training data artefacts — large binary files, do NOT push to Catalyst
+training_data/*.pkl
+training_data/_*.pkl
+training_data/_*.json
+training_data/runs/
+*.pt
+*.zip
+*.tar.gz

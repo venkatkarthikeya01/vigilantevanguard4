@@ -1,43 +1,75 @@
 """
 Catalyst Authentication middleware for VigilanteVanguard.
-Supports two token types:
-  1. vv_demo  — self-contained signed token issued by /auth/login (works locally AND on AppSail)
-  2. Catalyst JWT — validated via Catalyst Auth SDK (production Catalyst Auth login)
+
+Token types:
+  1. vv_demo  — self-contained HMAC-signed token issued by /auth/login
+                Works locally AND on AppSail without a Catalyst session context.
+  2. Catalyst JWT — validated via Catalyst Auth SDK (full production mode)
+
+Branch / data isolation model:
+  Every user carries a `branch_id` (e.g. "BLR_SOUTH", "MYS_CITY") and an
+  optional `station_code` (e.g. "BLR_S_01").  All data queries are scoped to
+  that branch except for ADMINISTRATOR role which sees everything.
+
+  branch_id = None  →  legacy / demo accounts (treated as global admin in dev)
+  branch_id = "HQ"  →  State HQ — same access as ADMINISTRATOR
 """
-from fastapi import HTTPException, Security, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from enum import Enum
-from typing import Optional
-from pydantic import BaseModel
+import os
 import base64
 import json
 import hmac
 import hashlib
+from enum import Enum
+from typing import Optional
+
+from fastapi import HTTPException, Security, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
 from app.core.config import settings
 
-
-# Matches the secret in routers/auth.py
-_TOKEN_SECRET = "vv_ksp_demo_2026"
+# Read from env so the secret can be rotated without code changes
+_TOKEN_SECRET = os.environ.get("VV_TOKEN_SECRET", settings.VV_TOKEN_SECRET)
 
 # auto_error=False so a missing header doesn't throw 403 before our logic runs
 security = HTTPBearer(auto_error=False)
 
 
 class UserRole(str, Enum):
-    INVESTIGATOR = "INVESTIGATOR"
-    ANALYST = "ANALYST"
-    SUPERVISOR = "SUPERVISOR"
+    INVESTIGATOR  = "INVESTIGATOR"
+    ANALYST       = "ANALYST"
+    SUPERVISOR    = "SUPERVISOR"
     ADMINISTRATOR = "ADMINISTRATOR"
-    POLICYMAKER = "POLICYMAKER"
+    POLICYMAKER   = "POLICYMAKER"
 
 
 class AuthUser(BaseModel):
-    user_id: str
-    email: str
-    role: UserRole
-    unit_id: Optional[int] = None
-    district_id: Optional[int] = None
+    user_id:      str
+    email:        str
+    role:         UserRole
+    # Branch / station identity — set at login time, baked into token
+    branch_id:    Optional[str] = None   # e.g. "BLR_SOUTH", "MYS_CITY", "HQ"
+    branch_name:  Optional[str] = None   # e.g. "Bengaluru South Division"
+    station_code: Optional[str] = None   # e.g. "BLR_S_01"
+    # Legacy district scoping (kept for backward compat)
+    unit_id:      Optional[int] = None
+    district_id:  Optional[int] = None
     display_name: Optional[str] = None
+
+    @property
+    def is_admin(self) -> bool:
+        """True if this user has unrestricted cross-branch access."""
+        return self.role == UserRole.ADMINISTRATOR or self.branch_id in (None, "HQ")
+
+    def can_access_branch(self, branch_id: Optional[str]) -> bool:
+        """
+        Returns True if this user is allowed to see data from `branch_id`.
+        Admins / HQ see all branches. Other users see only their own branch.
+        """
+        if self.is_admin:
+            return True
+        if branch_id is None:
+            return True   # unscoped legacy data — always visible
+        return self.branch_id == branch_id
 
 
 def _verify_demo_token(token: str) -> Optional[AuthUser]:
@@ -55,7 +87,6 @@ def _verify_demo_token(token: str) -> Optional[AuthUser]:
 
     payload_b64, sig = parts[0], parts[1]
 
-    # Add back stripped padding
     padding = 4 - len(payload_b64) % 4
     if padding != 4:
         payload_b64 += "=" * padding
@@ -66,9 +97,8 @@ def _verify_demo_token(token: str) -> Optional[AuthUser]:
         return None  # Not a vv_demo token — let Catalyst Auth handle it
 
     if payload.get("type") != "vv_demo":
-        return None  # Not ours — let Catalyst Auth handle it
+        return None
 
-    # Verify HMAC signature
     expected_sig = hmac.new(
         _TOKEN_SECRET.encode(),
         parts[0].encode(),
@@ -84,10 +114,13 @@ def _verify_demo_token(token: str) -> Optional[AuthUser]:
         role = UserRole.INVESTIGATOR
 
     return AuthUser(
-        user_id=payload.get("user_id", "1"),
-        email=payload.get("email", ""),
-        role=role,
-        district_id=payload.get("district_id"),
+        user_id=     payload.get("user_id",      "1"),
+        email=       payload.get("email",         ""),
+        role=        role,
+        branch_id=   payload.get("branch_id"),
+        branch_name= payload.get("branch_name"),
+        station_code=payload.get("station_code"),
+        district_id= payload.get("district_id"),
         display_name=payload.get("display_name", ""),
     )
 
@@ -101,8 +134,7 @@ async def verify_catalyst_token(
       2. vv_demo self-contained token → decode & verify HMAC (works everywhere)
       3. Catalyst JWT → validate via Catalyst Auth SDK (full production mode)
     """
-    # ── Pure dev mode: no token at all, no real PROJECT_ID ────
-    _pid = (settings.CATALYST_PROJECT_ID or "").strip()
+    _pid    = (settings.CATALYST_PROJECT_ID or "").strip()
     _is_dev = not _pid or not _pid.isdigit()
 
     if not credentials:
@@ -111,6 +143,8 @@ async def verify_catalyst_token(
                 user_id="1",
                 email="admin@ksp.gov.in",
                 role=UserRole.ADMINISTRATOR,
+                branch_id="HQ",
+                branch_name="State HQ",
                 unit_id=1,
                 district_id=5,
                 display_name="Dev Admin",
@@ -119,42 +153,47 @@ async def verify_catalyst_token(
 
     token = credentials.credentials
 
-    # ── Try vv_demo self-contained token first (works on AppSail too) ──
+    # ── Try vv_demo self-contained token first ─────────────────────────────────
     demo_user = _verify_demo_token(token)
     if demo_user is not None:
         return demo_user
 
-    # ── Dev mode fallback: any unrecognised token accepted ────
+    # ── Dev mode fallback: any unrecognised token → admin ─────────────────────
     if _is_dev:
         return AuthUser(
             user_id="1",
             email="admin@ksp.gov.in",
             role=UserRole.ADMINISTRATOR,
+            branch_id="HQ",
+            branch_name="State HQ",
             unit_id=1,
             district_id=5,
             display_name="Dev Admin",
         )
 
-    # ── Production: validate via Catalyst Auth SDK ────────────
+    # ── Production: validate via Catalyst Auth SDK ─────────────────────────────
     try:
         import zcatalyst_sdk as catalyst
-        app = catalyst.initialize()
-        auth = app.authentication()
-        user_details = auth.validate_session_token(token)
+        app   = catalyst.initialize()
+        auth  = app.authentication()
+        udet  = auth.validate_session_token(token)
 
-        role_str = user_details.get("role", "INVESTIGATOR").upper()
+        role_str = udet.get("role", "INVESTIGATOR").upper()
         try:
             role = UserRole(role_str)
         except ValueError:
             role = UserRole.INVESTIGATOR
 
         return AuthUser(
-            user_id=user_details.get("user_id", ""),
-            email=user_details.get("email_id", ""),
-            role=role,
-            unit_id=user_details.get("unit_id"),
-            district_id=user_details.get("district_id"),
-            display_name=user_details.get("display_name", ""),
+            user_id=     udet.get("user_id", ""),
+            email=       udet.get("email_id", ""),
+            role=        role,
+            branch_id=   udet.get("branch_id"),
+            branch_name= udet.get("branch_name"),
+            station_code=udet.get("station_code"),
+            unit_id=     udet.get("unit_id"),
+            district_id= udet.get("district_id"),
+            display_name=udet.get("display_name", ""),
         )
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid or expired token: {str(e)}")

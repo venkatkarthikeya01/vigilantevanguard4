@@ -4,7 +4,7 @@
   "port": 8000,
   "runtime": "docker",
   "dockerfile": "Dockerfile",
-  "start_command": "uvicorn main:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 30 --log-level info",
+  "start_command": "uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1 --timeout-keep-alive 75 --log-level info",
   "memory": 1024,
   "instance_count": 1,
   "environment": {
@@ -12,6 +12,13 @@
     "CATALYST_ENV": "production",
     "GEMINI_API_KEY": "",
     "GOOGLE_MAPS_API_KEY": "",
-    "GOOGLE_GEOCODING_API_KEY": ""
+    "GOOGLE_GEOCODING_API_KEY": "",
+    "VV_TOKEN_SECRET": "",
+    "VV_TRAINING_DATA_DIR": "/app/training_data",
+    "ALLOWED_ORIGINS_STR": "https://vigilante-vanguard-60077849137.development.catalystappsail.in",
+    "MSG91_AUTH_KEY": "",
+    "MSG91_SENDER_ID": "VVPOL",
+    "MSG91_TEMPLATE_ID": "",
+    "CATALYST_STRATUS_BUCKET_TRAINING": "vv-training-data"
   }
 }

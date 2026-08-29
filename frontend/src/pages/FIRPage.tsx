@@ -66,12 +66,68 @@ const CRIME_SUB_HEADS: Record<number, { id: number; name: string }[]> = {
 }
 
 const ACT_SECTIONS = [
-  { act: 'IPC',      sections: ['302','307','304','304B','306','376','376D','363','364','366','354','354A','354D','395','396','379','380','381','392','393','420','406','498A','326','325','324','323','504','506','341','147','148','149','153A','489A'] },
-  { act: 'BNS',      sections: ['103','109','118','64','70','137','140','308','316','317','319','326','332','351','352','353','356'] },
-  { act: 'NDPS',     sections: ['8','15','20','21','22','25','27','27A','29'] },
-  { act: 'POCSO',    sections: ['3','4','5','6','7','8','9','10','11','12'] },
-  { act: 'SC/ST POA',sections: ['3(1)','3(2)','4','14A'] },
-  { act: 'IT Act',   sections: ['66','66A','66C','66D','66E','67','67A','67B'] },
+  // BNS 2023 — Bharatiya Nyaya Sanhita (replaces IPC)
+  { act: 'BNS',       sections: [
+    '103',   // Murder (= IPC 302)
+    '105',   // Culpable Homicide not amounting to Murder (= IPC 304)
+    '107',   // Abetment of suicide (= IPC 306)
+    '109',   // Attempt to murder (= IPC 307)
+    '115',   // Voluntarily causing hurt (= IPC 323)
+    '116',   // Voluntarily causing grievous hurt (= IPC 325)
+    '117',   // Causing grievous hurt with dangerous weapons (= IPC 326)
+    '118',   // Causing hurt by act endangering life
+    '119',   // Causing hurt by poison etc
+    '121',   // Assault / criminal force (= IPC 352)
+    '124',   // Kidnapping / abduction (= IPC 363)
+    '127',   // Abduction for murder (= IPC 364)
+    '130',   // Trafficking of person (= IPC 370)
+    '137',   // Robbery (= IPC 392)
+    '138',   // Dacoity (= IPC 395)
+    '140',   // Theft (= IPC 379)
+    '305',   // House-breaking (= IPC 445/446)
+    '316',   // Cheating (= IPC 420)
+    '318',   // Forgery (= IPC 463)
+    '319',   // Forgery for purpose of cheating (= IPC 468)
+    '308',   // Extortion (= IPC 383)
+    '309',   // Putting in fear of death (= IPC 386)
+    '326',   // Mischief by fire (= IPC 436)
+    '332',   // Criminal trespass (= IPC 441)
+    '351',   // Criminal intimidation (= IPC 503)
+    '352',   // Intentional insult (= IPC 504)
+    '353',   // Statements conducing to public mischief (= IPC 505)
+    '356',   // Defamation (= IPC 499)
+    '57',    // Sedition / disloyalty (= IPC 124A, modified)
+    '111',   // Organised crime
+    '113',   // Terrorist act
+    '64',    // Rape (= IPC 376)
+    '65',    // Rape on woman under 12 / 16
+    '66',    // Punishment for rape (= IPC 376)
+    '70',    // Gang rape (= IPC 376D)
+    '74',    // Assault or use of criminal force with intent to disrobe (= IPC 354B)
+    '75',    // Stalking (= IPC 354D)
+    '76',    // Voyeurism (= IPC 354C)
+    '79',    // Cruelty — dowry / harassment (= IPC 498A)
+    '80',    // Dowry death (= IPC 304B)
+    '84',    // Abetment of suicide of married woman (= IPC 306)
+    '85',    // Dishonour killing / related offences
+    '152',   // Endangering sovereignty / integrity
+  ]},
+  // BNSS 2023 — Bharatiya Nagarik Suraksha Sanhita (procedural, replaces CrPC)
+  { act: 'BNSS',      sections: ['173','176','177','178','179','180','181','187','193','197','200','204','209','210','218','227','229'] },
+  // NDPS Act 1985
+  { act: 'NDPS',      sections: ['8','15','20','21','22','25','27','27A','29','37'] },
+  // POCSO Act 2012
+  { act: 'POCSO',     sections: ['3','4','5','6','7','8','9','10','11','12','13','14','15'] },
+  // SC/ST Prevention of Atrocities Act 1989
+  { act: 'SC/ST POA', sections: ['3(1)(a)','3(1)(b)','3(1)(c)','3(1)(d)','3(1)(e)','3(1)(r)','3(1)(s)','3(2)(v)','3(2)(va)','4','14A'] },
+  // IT Act 2000
+  { act: 'IT Act',    sections: ['43','65','66','66A','66B','66C','66D','66E','66F','67','67A','67B','72','72A'] },
+  // Arms Act 1959
+  { act: 'Arms Act',  sections: ['3','4','5','7','25','26','27','29','30'] },
+  // Karnataka Police Act 1963
+  { act: 'KP Act',    sections: ['70','79','88','94','95'] },
+  // IPC (legacy — for cases registered before 1 Jul 2024)
+  { act: 'IPC',       sections: ['302','307','304','304B','306','376','376D','363','364','366','354','354A','354D','395','396','379','380','381','392','393','420','406','498A','326','325','324','323','504','506','341','147','148','149','153A','489A'] },
 ]
 
 const GRAVITY_OPTIONS = [
@@ -82,7 +138,26 @@ const GENDERS     = [{ id:1, name:'Male' }, { id:2, name:'Female' }, { id:3, nam
 const RELIGIONS   = [{ id:1, name:'Hindu' }, { id:2, name:'Muslim' }, { id:3, name:'Christian' }, { id:4, name:'Sikh' }, { id:5, name:'Jain' }, { id:6, name:'Buddhist' }, { id:7, name:'Other' }]
 const OCCUPATIONS = [{ id:1, name:'Farmer' }, { id:2, name:'Government Employee' }, { id:3, name:'Business' }, { id:4, name:'Student' }, { id:5, name:'Labour' }, { id:6, name:'Retired' }, { id:7, name:'Housewife' }, { id:8, name:'Professional' }, { id:9, name:'Other' }]
 const CASTES      = [{ id:1, name:'Scheduled Caste' }, { id:2, name:'Scheduled Tribe' }, { id:3, name:'Other Backward Class' }, { id:4, name:'General / Unreserved' }, { id:5, name:'Vokkaliga' }, { id:6, name:'Lingayat' }, { id:7, name:'Kuruba' }, { id:8, name:'Brahmin' }, { id:9, name:'Muslim OBC' }, { id:10, name:'Christian' }, { id:12, name:'Other' }]
-const CASE_CATEGORIES = [{ id:1, code:'1', name:'FIR' }, { id:2, code:'3', name:'UDR' }, { id:3, code:'4', name:'PAR' }, { id:4, code:'8', name:'Zero FIR' }]
+const CASE_CATEGORIES = [
+  { id:1, code:'1', name:'FIR' },
+  { id:2, code:'3', name:'UDR' },
+  { id:3, code:'4', name:'PAR' },
+  { id:4, code:'8', name:'Zero FIR' },
+  { id:5, code:'9', name:'NC (Non-Cognizable)' },
+]
+
+// BNS section descriptions for the UI tooltip
+const BNS_DESCRIPTIONS: Record<string, string> = {
+  '103':'Murder', '105':'Culpable Homicide', '107':'Abetment of Suicide',
+  '109':'Attempt to Murder', '115':'Hurt', '116':'Grievous Hurt',
+  '117':'GH — Dangerous Weapon', '121':'Assault / Criminal Force',
+  '124':'Kidnapping', '127':'Abduction for Murder', '130':'Trafficking',
+  '137':'Robbery', '138':'Dacoity', '140':'Theft', '316':'Cheating',
+  '308':'Extortion', '332':'Criminal Trespass', '351':'Criminal Intimidation',
+  '64':'Rape', '70':'Gang Rape', '75':'Stalking', '79':'Cruelty / Dowry Harassment',
+  '80':'Dowry Death', '111':'Organised Crime', '113':'Terrorist Act',
+  '57':'Sedition (Modified)',
+}
 
 // ─── Local-storage key ──────────────────────────────────────────
 const LS_KEY = 'vv_firs_local'
@@ -92,6 +167,10 @@ interface PersonEntry {
   name: string; age: string; genderId: number
   occupationId?: number; religionId?: number; casteId?: number
   isPolice?: boolean; personId?: string
+  // Extended fields
+  fatherName?: string; address?: string; mobile?: string
+  aadhaar?: string; nativity?: string; education?: string
+  identificationMark?: string
 }
 interface ActSectionEntry { act: string; section: string }
 interface LocalFIR {
@@ -111,6 +190,10 @@ interface FIRFormState {
   latitude: string; longitude: string; briefFacts: string
   actSections: ActSectionEntry[]
   complainants: PersonEntry[]; victims: PersonEntry[]; accused: PersonEntry[]
+  // Extended case fields
+  placeOfOccurrence: string; propertyDetails: string; vehicleDetails: string
+  witnessDetails: string; investigatingOfficer: string; ioRank: string
+  firPsName: string; isZeroFIR: boolean; transferredTo: string
 }
 
 const emptyPerson  = (): PersonEntry => ({ name: '', age: '', genderId: 1 })
@@ -120,9 +203,12 @@ const emptyForm    = (): FIRFormState => ({
   incidentFromDate: new Date().toISOString().slice(0, 16),
   incidentToDate: '', infoReceivedDate: new Date().toISOString().slice(0, 16),
   latitude: '', longitude: '', briefFacts: '',
-  actSections: [{ act: 'IPC', section: '302' }],
+  actSections: [{ act: 'BNS', section: '103' }],
   complainants: [emptyPerson()], victims: [emptyPerson()],
   accused: [{ ...emptyPerson(), personId: 'A1' }],
+  placeOfOccurrence: '', propertyDetails: '', vehicleDetails: '',
+  witnessDetails: '', investigatingOfficer: '', ioRank: '',
+  firPsName: '', isZeroFIR: false, transferredTo: '',
 })
 
 // ─── Local-storage helpers ──────────────────────────────────────
@@ -132,8 +218,21 @@ function loadLocalFIRs(): LocalFIR[] {
 }
 function saveLocalFIR(fir: LocalFIR) {
   const all = loadLocalFIRs()
-  all.unshift(fir)
-  localStorage.setItem(LS_KEY, JSON.stringify(all.slice(0, 500)))
+  // Upsert: replace if id already exists, else prepend
+  const exists = all.some(f => f.id === fir.id || f.crime_no === fir.crime_no)
+  const updated = exists
+    ? all.map(f => (f.id === fir.id || f.crime_no === fir.crime_no) ? { ...f, ...fir } : f)
+    : [fir, ...all]
+  localStorage.setItem(LS_KEY, JSON.stringify(updated.slice(0, 500)))
+}
+function upsertLocalFIRFromRow(row: LocalFIR) {
+  // Ensures backend FIRs exist in local store so status changes work
+  const all = loadLocalFIRs()
+  const exists = all.some(f => f.id === row.id || f.crime_no === row.crime_no)
+  if (exists) return all
+  const updated = [row, ...all]
+  localStorage.setItem(LS_KEY, JSON.stringify(updated.slice(0, 500)))
+  return updated
 }
 function updateLocalFIRStatus(id: string, newStatus: string) {
   const all = loadLocalFIRs()
@@ -240,14 +339,22 @@ function PersonCard({ person, index, onChange, onRemove, showOccupation, showCas
         <span className="text-xs font-semibold text-gray-300">{labelPrefix} #{index + 1}</span>
         <button onClick={onRemove} className="text-gray-600 hover:text-red-400 transition-colors"><X className="h-3.5 w-3.5" /></button>
       </div>
+      {/* Row 1 — Core identity */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="sm:col-span-2">
           <FieldLabel required>Full Name</FieldLabel>
-          <InputField value={person.name} onChange={v => onChange({ ...person, name: v })} placeholder="Full name" />
+          <InputField value={person.name} onChange={v => onChange({ ...person, name: v })} placeholder="Full name as per ID" />
         </div>
         <div>
-          <FieldLabel required>Age</FieldLabel>
+          <FieldLabel required>Age (yrs)</FieldLabel>
           <InputField value={person.age} onChange={v => onChange({ ...person, age: v })} type="number" placeholder="Years" />
+        </div>
+      </div>
+      {/* Row 2 — Father, gender */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="sm:col-span-2">
+          <FieldLabel>Father / Husband Name</FieldLabel>
+          <InputField value={person.fatherName ?? ''} onChange={v => onChange({ ...person, fatherName: v })} placeholder="S/o, D/o, W/o" />
         </div>
         <div>
           <FieldLabel required>Gender</FieldLabel>
@@ -255,44 +362,81 @@ function PersonCard({ person, index, onChange, onRemove, showOccupation, showCas
             {GENDERS.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
           </SelectField>
         </div>
-        {showOccupation && (
+      </div>
+      {/* Row 3 — Mobile, Aadhaar */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <FieldLabel>Mobile No.</FieldLabel>
+          <InputField value={person.mobile ?? ''} onChange={v => onChange({ ...person, mobile: v })} placeholder="10-digit mobile" />
+        </div>
+        <div>
+          <FieldLabel>Aadhaar No.</FieldLabel>
+          <InputField value={person.aadhaar ?? ''} onChange={v => onChange({ ...person, aadhaar: v })} placeholder="XXXX-XXXX-XXXX" />
+        </div>
+      </div>
+      {/* Row 4 — Address */}
+      <div>
+        <FieldLabel>Address (Residential)</FieldLabel>
+        <InputField value={person.address ?? ''} onChange={v => onChange({ ...person, address: v })} placeholder="Door No., Street, Village/City, Taluk, District, PIN" />
+      </div>
+      {/* Row 5 — Nativity, Education */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div>
+          <FieldLabel>Nativity / Native Place</FieldLabel>
+          <InputField value={person.nativity ?? ''} onChange={v => onChange({ ...person, nativity: v })} placeholder="Village / Town of origin" />
+        </div>
+        <div>
+          <FieldLabel>Education</FieldLabel>
+          <InputField value={person.education ?? ''} onChange={v => onChange({ ...person, education: v })} placeholder="e.g. SSLC, PUC, Graduate" />
+        </div>
+      </div>
+      {/* Row 6 — Identification mark */}
+      <div>
+        <FieldLabel>Identification Marks</FieldLabel>
+        <InputField value={person.identificationMark ?? ''} onChange={v => onChange({ ...person, identificationMark: v })} placeholder="e.g. Scar on left cheek, tattoo on right forearm" />
+      </div>
+      {/* Optional fields */}
+      {showOccupation && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <FieldLabel>Occupation</FieldLabel>
             <SelectField value={person.occupationId ?? 9} onChange={v => onChange({ ...person, occupationId: +v })}>
               {OCCUPATIONS.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </SelectField>
           </div>
-        )}
-        {showCaste && (
-          <>
-            <div>
-              <FieldLabel>Religion</FieldLabel>
-              <SelectField value={person.religionId ?? 1} onChange={v => onChange({ ...person, religionId: +v })}>
-                {RELIGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </SelectField>
-            </div>
-            <div>
-              <FieldLabel>Caste</FieldLabel>
-              <SelectField value={person.casteId ?? 4} onChange={v => onChange({ ...person, casteId: +v })}>
-                {CASTES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </SelectField>
-            </div>
-          </>
-        )}
-        {labelPrefix === 'Accused' && (
+        </div>
+      )}
+      {showCaste && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <FieldLabel>Sort ID</FieldLabel>
+            <FieldLabel>Religion</FieldLabel>
+            <SelectField value={person.religionId ?? 1} onChange={v => onChange({ ...person, religionId: +v })}>
+              {RELIGIONS.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </SelectField>
+          </div>
+          <div>
+            <FieldLabel>Caste / Community</FieldLabel>
+            <SelectField value={person.casteId ?? 4} onChange={v => onChange({ ...person, casteId: +v })}>
+              {CASTES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </SelectField>
+          </div>
+        </div>
+      )}
+      {labelPrefix === 'Accused' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <FieldLabel>Accused Sort ID</FieldLabel>
             <InputField value={person.personId ?? ''} onChange={v => onChange({ ...person, personId: v })} placeholder="A1, A2..." />
           </div>
-        )}
-        {showIsPolice && (
-          <div className="flex items-center gap-2 pt-6">
-            <input type="checkbox" checked={!!person.isPolice} onChange={e => onChange({ ...person, isPolice: e.target.checked })}
-              className="rounded accent-blue-500" id={`police-${index}`} />
-            <label htmlFor={`police-${index}`} className="text-xs text-gray-400">Is Police Officer</label>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
+      {showIsPolice && (
+        <div className="flex items-center gap-2">
+          <input type="checkbox" checked={!!person.isPolice} onChange={e => onChange({ ...person, isPolice: e.target.checked })}
+            className="rounded accent-blue-500" id={`police-${index}`} />
+          <label htmlFor={`police-${index}`} className="text-xs text-gray-400">Is Police Officer / Personnel</label>
+        </div>
+      )}
     </div>
   )
 }
@@ -306,12 +450,13 @@ function fmtDate(raw: string | undefined | null): string {
 }
 
 function printFIR(fir: any, form: FIRFormState) {
+  const esc            = (s: string) => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   const crimeNo        = fir?.crime_no ?? 'PENDING'
   const caseNo         = fir?.case_no  ?? '—'
   const registeredDate = fmtDate(fir?.crime_registered_date)
   const caseStatus     = fir?.case_status ?? 'Under Investigation'
   const districtName   = DISTRICTS.find(d => d.id === form.districtId)?.name ?? '—'
-  const psName         = `Station ID: ${form.policeStationId} — ${districtName} District`
+  const psName         = form.firPsName || `Station ID: ${form.policeStationId} — ${districtName} District`
   const category       = CASE_CATEGORIES.find(c => c.id === form.caseCategoryId)?.name ?? 'FIR'
   const gravity        = GRAVITY_OPTIONS.find(g => g.id === form.gravityOffenceId)?.name ?? '—'
   const crimeHead      = CRIME_HEADS.find(h => h.id === form.crimeMajorHeadId)?.name ?? '—'
@@ -421,6 +566,10 @@ function printFIR(fir: any, form: FIRFormState) {
       <th>Info Received at PS</th><td>${fmtDate(form.infoReceivedDate) || '&mdash;'}</td>
       <th>GPS Coordinates</th><td>${gpsText}</td>
     </tr>
+    <tr>
+      <th>Place of Occurrence</th><td colspan="3">${esc(form.placeOfOccurrence) || '&mdash;'}</td>
+    </tr>
+    ${form.isZeroFIR ? `<tr><th>Zero FIR — Transfer PS</th><td colspan="3"><strong>${esc(form.transferredTo) || 'Not specified'}</strong></td></tr>` : ''}
     ${mapUrl ? `<tr><th>Location Link</th><td colspan="3" style="font-size:9pt;color:#1a56db">${mapUrl}</td></tr>` : ''}
   </table>
 </div>
@@ -437,8 +586,18 @@ function printFIR(fir: any, form: FIRFormState) {
 
 <div class="section">
   <div class="section-title">III. Brief Facts of the Case</div>
-  <div class="facts-box">${(form.briefFacts || '(Not provided)').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+  <div class="facts-box">${esc(form.briefFacts) || '(Not provided)'}</div>
 </div>
+
+${(form.propertyDetails || form.vehicleDetails || form.witnessDetails) ? `
+<div class="section">
+  <div class="section-title">III-A. Property, Vehicle &amp; Witness Details</div>
+  <table class="info">
+    ${form.propertyDetails ? `<tr><th style="width:22%">Property Involved</th><td colspan="3">${esc(form.propertyDetails)}</td></tr>` : ''}
+    ${form.vehicleDetails  ? `<tr><th>Vehicle Details</th><td colspan="3">${esc(form.vehicleDetails)}</td></tr>` : ''}
+    ${form.witnessDetails  ? `<tr><th>Witness Details</th><td colspan="3" style="white-space:pre-wrap">${esc(form.witnessDetails)}</td></tr>` : ''}
+  </table>
+</div>` : ''}
 
 <div class="section no-break">
   <div class="section-title">IV. Complainant Details</div>
@@ -448,17 +607,29 @@ function printFIR(fir: any, form: FIRFormState) {
       <div class="person-header">Complainant #${i+1}${c.name ? ' \u2014 ' + c.name : ''}</div>
       <table class="person">
         <tr>
-          <th style="width:22%">Full Name</th><td style="width:28%">${c.name||'&mdash;'}</td>
+          <th style="width:22%">Full Name</th><td style="width:28%">${esc(c.name)||'&mdash;'}</td>
           <th style="width:22%">Age</th><td>${c.age ? c.age+' years' : '&mdash;'}</td>
         </tr>
         <tr>
+          <th>Father / Husband</th><td>${esc(c.fatherName||'')||'&mdash;'}</td>
           <th>Gender</th><td>${GENDERS.find(g=>g.id===c.genderId)?.name||'&mdash;'}</td>
-          <th>Occupation</th><td>${OCCUPATIONS.find(o=>o.id===c.occupationId)?.name||'&mdash;'}</td>
         </tr>
         <tr>
-          <th>Religion</th><td>${RELIGIONS.find(r=>r.id===c.religionId)?.name||'&mdash;'}</td>
-          <th>Caste / Category</th><td>${CASTES.find(ca=>ca.id===c.casteId)?.name||'&mdash;'}</td>
+          <th>Mobile</th><td>${esc(c.mobile||'')||'&mdash;'}</td>
+          <th>Aadhaar No.</th><td>${esc(c.aadhaar||'')||'&mdash;'}</td>
         </tr>
+        <tr>
+          <th>Address</th><td colspan="3">${esc(c.address||'')||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Nativity</th><td>${esc(c.nativity||'')||'&mdash;'}</td>
+          <th>Education</th><td>${esc(c.education||'')||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Occupation</th><td>${OCCUPATIONS.find(o=>o.id===c.occupationId)?.name||'&mdash;'}</td>
+          <th>Religion / Caste</th><td>${RELIGIONS.find(r=>r.id===c.religionId)?.name||'&mdash;'} / ${CASTES.find(ca=>ca.id===c.casteId)?.name||'&mdash;'}</td>
+        </tr>
+        ${c.identificationMark ? `<tr><th>Identification Marks</th><td colspan="3">${esc(c.identificationMark)}</td></tr>` : ''}
       </table>`).join('')}
 </div>
 
@@ -470,12 +641,27 @@ function printFIR(fir: any, form: FIRFormState) {
       <div class="person-header">Victim #${i+1}${v.name ? ' \u2014 ' + v.name : ''}</div>
       <table class="person">
         <tr>
-          <th style="width:22%">Full Name</th><td style="width:28%">${v.name||'&mdash;'}</td>
+          <th style="width:22%">Full Name</th><td style="width:28%">${esc(v.name)||'&mdash;'}</td>
           <th style="width:22%">Age</th><td>${v.age ? v.age+' years' : '&mdash;'}</td>
         </tr>
         <tr>
+          <th>Father / Husband</th><td>${esc(v.fatherName||'')||'&mdash;'}</td>
           <th>Gender</th><td>${GENDERS.find(g=>g.id===v.genderId)?.name||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Mobile</th><td>${esc(v.mobile||'')||'&mdash;'}</td>
+          <th>Aadhaar No.</th><td>${esc(v.aadhaar||'')||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Address</th><td colspan="3">${esc(v.address||'')||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Nativity</th><td>${esc(v.nativity||'')||'&mdash;'}</td>
+          <th>Education</th><td>${esc(v.education||'')||'&mdash;'}</td>
+        </tr>
+        <tr>
           <th>Is Police Officer</th><td>${v.isPolice ? 'Yes \u2014 Police Personnel' : 'No'}</td>
+          <th>Identification Marks</th><td>${esc(v.identificationMark||'')||'&mdash;'}</td>
         </tr>
       </table>`).join('')}
 </div>
@@ -488,15 +674,44 @@ function printFIR(fir: any, form: FIRFormState) {
       <div class="person-header">Accused ${a.personId || '#'+(i+1)}${a.name ? ' \u2014 ' + a.name : ' \u2014 Unknown'}</div>
       <table class="person">
         <tr>
-          <th style="width:22%">Name</th><td style="width:28%">${a.name||'<em>Unknown / Not Identified</em>'}</td>
-          <th style="width:22%">Person ID</th><td>${a.personId||'&mdash;'}</td>
+          <th style="width:22%">Name</th><td style="width:28%">${esc(a.name)||'<em>Unknown / Not Identified</em>'}</td>
+          <th style="width:22%">Accused ID</th><td>${a.personId||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Father / Husband</th><td>${esc(a.fatherName||'')||'&mdash;'}</td>
+          <th>Gender</th><td>${GENDERS.find(g=>g.id===a.genderId)?.name||'&mdash;'}</td>
         </tr>
         <tr>
           <th>Age</th><td>${a.age ? a.age+' years' : '&mdash;'}</td>
-          <th>Gender</th><td>${GENDERS.find(g=>g.id===a.genderId)?.name||'&mdash;'}</td>
+          <th>Mobile</th><td>${esc(a.mobile||'')||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Aadhaar No.</th><td>${esc(a.aadhaar||'')||'&mdash;'}</td>
+          <th>Education</th><td>${esc(a.education||'')||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Address</th><td colspan="3">${esc(a.address||'')||'&mdash;'}</td>
+        </tr>
+        <tr>
+          <th>Nativity</th><td>${esc(a.nativity||'')||'&mdash;'}</td>
+          <th>Identification Marks</th><td>${esc(a.identificationMark||'')||'&mdash;'}</td>
         </tr>
       </table>`).join('')}
 </div>
+
+${form.investigatingOfficer ? `
+<div class="section">
+  <div class="section-title">VII. Investigating Officer</div>
+  <table class="info">
+    <tr>
+      <th style="width:22%">IO Name</th><td style="width:28%">${esc(form.investigatingOfficer)}</td>
+      <th style="width:22%">IO Rank</th><td>${esc(form.ioRank)||'&mdash;'}</td>
+    </tr>
+    <tr>
+      <th>Police Station</th><td colspan="3">${esc(psName)}</td>
+    </tr>
+  </table>
+</div>` : ''}
 
 <div class="sig-row">
   <div class="sig-col">
@@ -504,8 +719,8 @@ function printFIR(fir: any, form: FIRFormState) {
     <div class="sig-line">Signature / Thumb Impression</div>
   </div>
   <div class="sig-col">
-    <div style="font-size:9.5pt;font-weight:bold">Station House Officer</div>
-    <div class="sig-line">Name, Rank &amp; Signature</div>
+    <div style="font-size:9.5pt;font-weight:bold">Station House Officer${form.investigatingOfficer ? ' / IO' : ''}</div>
+    <div class="sig-line">${form.investigatingOfficer ? esc(form.investigatingOfficer) + (form.ioRank ? ', ' + esc(form.ioRank) : '') : 'Name, Rank &amp; Signature'}</div>
   </div>
   <div class="sig-col">
     <div style="font-size:9.5pt;font-weight:bold">Official Seal</div>
@@ -707,58 +922,137 @@ export default function FIRPage() {
 
           {/* ── Step 1: Case Info ── */}
           {step === 1 && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <h2 className="text-sm font-semibold text-white border-b border-gray-800 pb-2">Case Information</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel required>District</FieldLabel>
-                  <SelectField value={form.districtId} onChange={v => setForm(f => ({ ...f, districtId: +v }))}>
-                    {DISTRICTS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </SelectField>
-                </div>
-                <div>
-                  <FieldLabel required>Case Category</FieldLabel>
-                  <SelectField value={form.caseCategoryId} onChange={v => setForm(f => ({ ...f, caseCategoryId: +v }))}>
-                    {CASE_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name} — Cat. {c.code}</option>)}
-                  </SelectField>
-                </div>
-                <div>
-                  <FieldLabel required>Crime Major Head</FieldLabel>
-                  <SelectField value={form.crimeMajorHeadId} onChange={v => setForm(f => ({ ...f, crimeMajorHeadId: +v, crimeMinorHeadId: CRIME_SUB_HEADS[+v]?.[0]?.id ?? 0 }))}>
-                    {CRIME_HEADS.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-                  </SelectField>
-                </div>
-                <div>
-                  <FieldLabel>Crime Sub-Head</FieldLabel>
-                  <SelectField value={form.crimeMinorHeadId} onChange={v => setForm(f => ({ ...f, crimeMinorHeadId: +v }))}>
-                    {(CRIME_SUB_HEADS[form.crimeMajorHeadId] ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </SelectField>
-                </div>
-                <div>
-                  <FieldLabel required>Gravity of Offence</FieldLabel>
-                  <SelectField value={form.gravityOffenceId} onChange={v => setForm(f => ({ ...f, gravityOffenceId: +v }))}>
-                    {GRAVITY_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                  </SelectField>
-                </div>
-                <div>
-                  <FieldLabel required>Incident Date & Time (From)</FieldLabel>
-                  <InputField type="datetime-local" value={form.incidentFromDate} onChange={v => setForm(f => ({ ...f, incidentFromDate: v }))} />
-                </div>
-                <div>
-                  <FieldLabel>Incident Date & Time (To)</FieldLabel>
-                  <InputField type="datetime-local" value={form.incidentToDate} onChange={v => setForm(f => ({ ...f, incidentToDate: v }))} />
-                </div>
-                <div>
-                  <FieldLabel>Info Received at PS</FieldLabel>
-                  <InputField type="datetime-local" value={form.infoReceivedDate} onChange={v => setForm(f => ({ ...f, infoReceivedDate: v }))} />
+
+              {/* Sub-section: Registration */}
+              <div>
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">Registration Details</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel required>District</FieldLabel>
+                    <SelectField value={form.districtId} onChange={v => setForm(f => ({ ...f, districtId: +v }))}>
+                      {DISTRICTS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </SelectField>
+                  </div>
+                  <div>
+                    <FieldLabel>Police Station Name</FieldLabel>
+                    <InputField value={form.firPsName} onChange={v => setForm(f => ({ ...f, firPsName: v }))} placeholder="e.g. Cubbon Park PS, Bengaluru City" />
+                  </div>
+                  <div>
+                    <FieldLabel required>Case Category</FieldLabel>
+                    <SelectField value={form.caseCategoryId} onChange={v => {
+                      const isZero = CASE_CATEGORIES.find(c => c.id === +v)?.code === '8'
+                      setForm(f => ({ ...f, caseCategoryId: +v, isZeroFIR: isZero }))
+                    }}>
+                      {CASE_CATEGORIES.map(c => <option key={c.id} value={c.id}>{c.name} — Cat. {c.code}</option>)}
+                    </SelectField>
+                  </div>
+                  {form.isZeroFIR && (
+                    <div>
+                      <FieldLabel>Transfer to PS (Zero FIR)</FieldLabel>
+                      <InputField value={form.transferredTo} onChange={v => setForm(f => ({ ...f, transferredTo: v }))} placeholder="PS having jurisdiction" />
+                    </div>
+                  )}
+                  <div>
+                    <FieldLabel required>Gravity of Offence</FieldLabel>
+                    <SelectField value={form.gravityOffenceId} onChange={v => setForm(f => ({ ...f, gravityOffenceId: +v }))}>
+                      {GRAVITY_OPTIONS.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </SelectField>
+                  </div>
                 </div>
               </div>
+
+              {/* Sub-section: Crime Classification */}
               <div>
-                <FieldLabel required>Brief Facts of the Case</FieldLabel>
-                <textarea value={form.briefFacts} onChange={e => setForm(f => ({ ...f, briefFacts: e.target.value }))} rows={4}
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">Crime Classification</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel required>Crime Major Head</FieldLabel>
+                    <SelectField value={form.crimeMajorHeadId} onChange={v => setForm(f => ({ ...f, crimeMajorHeadId: +v, crimeMinorHeadId: CRIME_SUB_HEADS[+v]?.[0]?.id ?? 0 }))}>
+                      {CRIME_HEADS.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                    </SelectField>
+                  </div>
+                  <div>
+                    <FieldLabel>Crime Sub-Head</FieldLabel>
+                    <SelectField value={form.crimeMinorHeadId} onChange={v => setForm(f => ({ ...f, crimeMinorHeadId: +v }))}>
+                      {(CRIME_SUB_HEADS[form.crimeMajorHeadId] ?? []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </SelectField>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-section: Date & Time */}
+              <div>
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">Dates & Times</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel required>Incident Date & Time (From)</FieldLabel>
+                    <InputField type="datetime-local" value={form.incidentFromDate} onChange={v => setForm(f => ({ ...f, incidentFromDate: v }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Incident Date & Time (To)</FieldLabel>
+                    <InputField type="datetime-local" value={form.incidentToDate} onChange={v => setForm(f => ({ ...f, incidentToDate: v }))} />
+                  </div>
+                  <div>
+                    <FieldLabel>Info Received at PS</FieldLabel>
+                    <InputField type="datetime-local" value={form.infoReceivedDate} onChange={v => setForm(f => ({ ...f, infoReceivedDate: v }))} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-section: Place of Occurrence */}
+              <div>
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">Place of Occurrence</p>
+                <InputField value={form.placeOfOccurrence} onChange={v => setForm(f => ({ ...f, placeOfOccurrence: v }))}
+                  placeholder="Specific address / landmark where the offence occurred" />
+              </div>
+
+              {/* Sub-section: Brief Facts */}
+              <div>
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">Brief Facts</p>
+                <textarea value={form.briefFacts} onChange={e => setForm(f => ({ ...f, briefFacts: e.target.value }))} rows={5}
                   placeholder="Describe the incident in full detail — date, time, location, what happened, how, witnesses..."
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none" />
                 <p className="text-xs text-gray-600 mt-1">{form.briefFacts.length} characters</p>
+              </div>
+
+              {/* Sub-section: Property / Vehicle / Witness */}
+              <div>
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">Property, Vehicle & Witness Details</p>
+                <div className="space-y-3">
+                  <div>
+                    <FieldLabel>Property Involved (if any)</FieldLabel>
+                    <InputField value={form.propertyDetails} onChange={v => setForm(f => ({ ...f, propertyDetails: v }))}
+                      placeholder="Description, estimated value, items seized/stolen..." />
+                  </div>
+                  <div>
+                    <FieldLabel>Vehicle Details (if any)</FieldLabel>
+                    <InputField value={form.vehicleDetails} onChange={v => setForm(f => ({ ...f, vehicleDetails: v }))}
+                      placeholder="Vehicle type, reg. no., colour, make/model..." />
+                  </div>
+                  <div>
+                    <FieldLabel>Witness Details</FieldLabel>
+                    <textarea value={form.witnessDetails} onChange={e => setForm(f => ({ ...f, witnessDetails: e.target.value }))} rows={2}
+                      placeholder="Name, address, contact of each witness..."
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Sub-section: Investigating Officer */}
+              <div>
+                <p className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-3">Investigating Officer (IO)</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel>IO Name</FieldLabel>
+                    <InputField value={form.investigatingOfficer} onChange={v => setForm(f => ({ ...f, investigatingOfficer: v }))} placeholder="Full name of IO" />
+                  </div>
+                  <div>
+                    <FieldLabel>IO Rank</FieldLabel>
+                    <InputField value={form.ioRank} onChange={v => setForm(f => ({ ...f, ioRank: v }))} placeholder="e.g. Sub-Inspector, Inspector" />
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -828,37 +1122,46 @@ export default function FIRPage() {
             <div className="space-y-4">
               <h2 className="text-sm font-semibold text-white border-b border-gray-800 pb-2">Acts & Sections Invoked</h2>
               <div className="space-y-2">
-                {form.actSections.map((s, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <div className="w-36">
-                      <SelectField value={s.act} onChange={v => {
-                        const updated = form.actSections.map((sec, idx) => idx===i ? { ...sec, act:v, section: ACT_SECTIONS.find(a=>a.act===v)?.sections[0]??'' } : sec)
-                        setForm(f => ({ ...f, actSections: updated }))
-                      }}>
-                        {ACT_SECTIONS.map(a => <option key={a.act} value={a.act}>{a.act}</option>)}
-                      </SelectField>
+                {form.actSections.map((s, i) => {
+                  const bnsDesc = s.act === 'BNS' ? BNS_DESCRIPTIONS[s.section] : null
+                  return (
+                    <div key={i} className="flex gap-2 items-start">
+                      <div className="w-32 flex-shrink-0">
+                        <SelectField value={s.act} onChange={v => {
+                          const updated = form.actSections.map((sec, idx) => idx===i ? { ...sec, act:v, section: ACT_SECTIONS.find(a=>a.act===v)?.sections[0]??'' } : sec)
+                          setForm(f => ({ ...f, actSections: updated }))
+                        }}>
+                          {ACT_SECTIONS.map(a => <option key={a.act} value={a.act}>{a.act}</option>)}
+                        </SelectField>
+                      </div>
+                      <div className="flex-1">
+                        <SelectField value={s.section} onChange={v => {
+                          const updated = form.actSections.map((sec,idx) => idx===i ? { ...sec, section:v } : sec)
+                          setForm(f => ({ ...f, actSections: updated }))
+                        }}>
+                          {(ACT_SECTIONS.find(a=>a.act===s.act)?.sections??[]).map(sec => {
+                            const desc = s.act === 'BNS' ? BNS_DESCRIPTIONS[sec] : null
+                            return <option key={sec} value={sec}>Sec. {sec}{desc ? ` — ${desc}` : ''}</option>
+                          })}
+                        </SelectField>
+                        {bnsDesc && (
+                          <p className="text-xs text-blue-400 mt-0.5 pl-1">BNS Sec. {s.section} — <span className="font-medium">{bnsDesc}</span></p>
+                        )}
+                      </div>
+                      <button onClick={() => setForm(f => ({ ...f, actSections: f.actSections.filter((_,idx)=>idx!==i) }))}
+                        className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0 mt-2.5">
+                        <X className="h-4 w-4" />
+                      </button>
                     </div>
-                    <div className="flex-1">
-                      <SelectField value={s.section} onChange={v => {
-                        const updated = form.actSections.map((sec,idx) => idx===i ? { ...sec, section:v } : sec)
-                        setForm(f => ({ ...f, actSections: updated }))
-                      }}>
-                        {(ACT_SECTIONS.find(a=>a.act===s.act)?.sections??[]).map(sec => <option key={sec} value={sec}>Sec. {sec}</option>)}
-                      </SelectField>
-                    </div>
-                    <button onClick={() => setForm(f => ({ ...f, actSections: f.actSections.filter((_,idx)=>idx!==i) }))}
-                      className="text-gray-600 hover:text-red-400 transition-colors flex-shrink-0">
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
-              <button onClick={() => setForm(f => ({ ...f, actSections: [...f.actSections, { act:'IPC', section:'302' }] }))}
+              <button onClick={() => setForm(f => ({ ...f, actSections: [...f.actSections, { act:'BNS', section:'103' }] }))}
                 className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 border border-blue-800 hover:border-blue-600 rounded-lg px-3 py-2 transition-colors">
                 <PlusCircle className="h-3.5 w-3.5" />Add Section
               </button>
               <div className="bg-blue-950/30 border border-blue-900/50 rounded-lg p-3 text-xs text-blue-300">
-                <strong>Tip:</strong> Add all applicable IPC/BNS/NDPS/POCSO/SC-ST POA sections. Each will appear on the printed FIR.
+                <strong>BNS 2023</strong> (Bharatiya Nyaya Sanhita) is the primary law for offences after 1 Jul 2024. Add all applicable BNS / NDPS / POCSO / SC-ST POA sections. IPC is retained for legacy cases only.
               </div>
             </div>
           )}
@@ -1207,26 +1510,36 @@ export default function FIRPage() {
                           <Printer className="h-3 w-3" />
                         </button>
                         {/* Mark as Ongoing */}
-                        <button
-                          onClick={() => setLocalFIRs(updateLocalFIRStatus(fir.id, 'Under Investigation'))}
-                          className="flex items-center gap-1 text-xs text-gray-400 hover:text-yellow-400 border border-gray-700 hover:border-yellow-700 rounded-lg px-2 py-1.5 transition-colors"
-                          title="Mark as Ongoing">
-                          <Clock className="h-3 w-3" />
-                        </button>
-                        {/* Mark as Completed */}
-                        <button
-                          onClick={() => setLocalFIRs(updateLocalFIRStatus(fir.id, 'Completed'))}
-                          className="flex items-center gap-1 text-xs text-gray-400 hover:text-green-400 border border-gray-700 hover:border-green-700 rounded-lg px-2 py-1.5 transition-colors"
-                          title="Mark as Completed">
-                          <CheckSquare className="h-3 w-3" />
-                        </button>
-                        {/* Delete */}
-                        <button
-                          onClick={() => { if (confirm(`Delete FIR ${fir.crime_no}? This cannot be undone.`)) setLocalFIRs(deleteLocalFIR(fir.id)) }}
-                          className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-400 border border-gray-700 hover:border-red-700 rounded-lg px-2 py-1.5 transition-colors"
-                          title="Delete FIR">
-                          <Trash2 className="h-3 w-3" />
-                        </button>
+                         <button
+                           onClick={() => {
+                             upsertLocalFIRFromRow(fir)
+                             setLocalFIRs(updateLocalFIRStatus(fir.id, 'Under Investigation'))
+                           }}
+                           className="flex items-center gap-1 text-xs text-gray-400 hover:text-yellow-400 border border-gray-700 hover:border-yellow-700 rounded-lg px-2 py-1.5 transition-colors"
+                           title="Mark as Ongoing">
+                           <Clock className="h-3 w-3" />
+                         </button>
+                         {/* Mark as Completed */}
+                         <button
+                           onClick={() => {
+                             upsertLocalFIRFromRow(fir)
+                             setLocalFIRs(updateLocalFIRStatus(fir.id, 'Completed'))
+                           }}
+                           className={`flex items-center gap-1 text-xs border rounded-lg px-2 py-1.5 transition-colors ${
+                             fir.case_status?.toLowerCase().includes('complet')
+                               ? 'bg-green-900/30 border-green-700 text-green-400 cursor-default'
+                               : 'text-gray-400 hover:text-green-400 border-gray-700 hover:border-green-700'
+                           }`}
+                           title="Mark as Completed">
+                           <CheckSquare className="h-3 w-3" />
+                         </button>
+                         {/* Delete */}
+                         <button
+                           onClick={() => { if (confirm(`Delete FIR ${fir.crime_no}? This cannot be undone.`)) setLocalFIRs(deleteLocalFIR(fir.id)) }}
+                           className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-400 border border-gray-700 hover:border-red-700 rounded-lg px-2 py-1.5 transition-colors"
+                           title="Delete FIR">
+                           <Trash2 className="h-3 w-3" />
+                         </button>
                       </div>
                     </td>
                   </tr>

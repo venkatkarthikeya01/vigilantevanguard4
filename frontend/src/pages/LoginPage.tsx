@@ -5,6 +5,9 @@ import { Shield, Eye, EyeOff } from 'lucide-react'
 
 // ─── Demo accounts — works fully offline / on Slate with no backend ───────────
 const DEMO_USERS: Record<string, { password: string; role: string; display_name: string; district_id: number }> = {
+  // ── Simple username logins ──
+  'admin':                         { password: '12345',          role: 'ADMINISTRATOR', display_name: 'Admin',            district_id: 5 },
+  // ── Email logins ──
   'admin@ksp.gov.in':              { password: 'admin123',       role: 'ADMINISTRATOR', display_name: 'Admin Officer',    district_id: 5 },
   'venkat.25cse@cambridge.edu.in': { password: 'Karthi@007',     role: 'ADMINISTRATOR', display_name: 'Venkat (Admin)',   district_id: 5 },
   'raj.kumar@ksp.gov.in':          { password: 'Inspector@123',  role: 'INVESTIGATOR',  display_name: 'Insp. Raj Kumar',  district_id: 5 },
@@ -12,9 +15,30 @@ const DEMO_USERS: Record<string, { password: string; role: string; display_name:
   'suresh.babu@ksp.gov.in':        { password: 'Supervisor@123', role: 'SUPERVISOR',    display_name: 'DSP Suresh Babu',  district_id: 5 },
 }
 
-function makeLocalToken(email: string): string {
-  const payload = btoa(JSON.stringify({ email, type: 'vv_demo', iat: Date.now() }))
-  return `${payload}.vvlocal`
+async function makeLocalToken(email: string, role: string, displayName: string, districtId: number): Promise<string> {
+  const payloadObj = {
+    user_id: String(Object.keys(DEMO_USERS).indexOf(email) + 1),
+    email,
+    role,
+    display_name: displayName,
+    district_id: districtId,
+    type: 'vv_demo',
+    iat: Date.now(),
+  }
+  const payloadB64 = btoa(JSON.stringify(payloadObj))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+  const secret = 'vv_ksp_demo_2026'
+  // HMAC-SHA256 via SubtleCrypto (available in all modern browsers)
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payloadB64))
+  const sigHex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16)
+  return `${payloadB64}.${sigHex}`
 }
 
 export default function LoginPage() {
@@ -34,13 +58,16 @@ export default function LoginPage() {
 
     // ── Local demo auth (always works, no backend needed) ──
     if (user && user.password === password) {
-      const token = makeLocalToken(key)
+      const token = await makeLocalToken(key, user.role, user.display_name, user.district_id)
       login({
         user_id: String(Object.keys(DEMO_USERS).indexOf(key) + 1),
         email: key,
         role: user.role,
         display_name: user.display_name,
         district_id: user.district_id,
+        branch_id: 'HQ',
+        branch_name: 'State HQ',
+        station_code: null,
       }, token)
       navigate('/')
       return
@@ -76,15 +103,15 @@ export default function LoginPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 space-y-4">
           <div>
             <label className="text-xs font-medium text-gray-400 mb-1.5 block">
-              Official Email / KGID
-            </label>
-            <input
-              type="text"
-              value={email}
-              onChange={e => { setEmail(e.target.value); setError('') }}
-              placeholder="officer@ksp.gov.in"
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
-            />
+                Username / Email / KGID
+              </label>
+              <input
+                type="text"
+                value={email}
+                onChange={e => { setEmail(e.target.value); setError('') }}
+                placeholder="admin  or  officer@ksp.gov.in"
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+              />
           </div>
 
           <div>
