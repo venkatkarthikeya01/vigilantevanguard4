@@ -228,6 +228,53 @@ export function playConfirmSound() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+//  PI ACCIDENT ENGINE — 4 STATE-CHANGE SOUNDS
+//  Fired by RPi5LivePage whenever the Pi accident status changes.
+//
+//  NORMAL    → no sound (system reset / all clear)
+//  POSSIBLE  → single soft warning ping   (something might be happening)
+//  CONFIRMED → double urgent klaxon       (accident confirmed, be ready)
+//  ALERT     → full emergency siren       (dispatch NOW)
+// ═══════════════════════════════════════════════════════════════
+
+/** POSSIBLE — single rising ping, gentle warning */
+export function playPossibleSound(muted = false) {
+  if (muted) return
+  const ctx = _getAudioCtx()
+  if (!ctx) return
+  const t = ctx.currentTime
+  _sweepTone(ctx, 600, 900, t, 0.25, 'sine', 0.25)
+  _tone(ctx, 900, t + 0.28, 0.12, 'sine', 0.18)
+}
+
+/** CONFIRMED — two sharp klaxon blasts, urgent */
+export function playConfirmedSound(muted = false) {
+  if (muted) return
+  const ctx = _getAudioCtx()
+  if (!ctx) return
+  const t = ctx.currentTime
+  _tone(ctx, 1100, t,        0.18, 'square', 0.38, 0.005, 0.04)
+  _tone(ctx, 900,  t + 0.04, 0.18, 'square', 0.28, 0.005, 0.04)
+  _tone(ctx, 1100, t + 0.30, 0.18, 'square', 0.38, 0.005, 0.04)
+  _tone(ctx, 900,  t + 0.34, 0.18, 'square', 0.28, 0.005, 0.04)
+}
+
+/** ALERT — full emergency siren, max urgency, repeating hi-lo sweep */
+export function playAlertStateSound(muted = false) {
+  if (muted) return
+  const ctx = _getAudioCtx()
+  if (!ctx) return
+  const t = ctx.currentTime
+  // Hi-lo-hi-lo emergency siren (4 sweeps)
+  for (let i = 0; i < 4; i++) {
+    const isHi = i % 2 === 0
+    _sweepTone(ctx, isHi ? 1400 : 900, isHi ? 900 : 1400,
+      t + i * 0.22, 0.20, 'sawtooth', 0.50)
+    _tone(ctx, isHi ? 700 : 450, t + i * 0.22, 0.20, 'square', 0.18)
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 //  WEBSOCKET HOOK
 // ═══════════════════════════════════════════════════════════════
 

@@ -25,9 +25,14 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Cpu, Camera, Wifi, WifiOff, RefreshCw, Activity,
   Zap, AlertTriangle, ExternalLink, Settings,
-  Maximize2, Minimize2, Eye, Radio, Crosshair, ChevronRight,
+  Maximize2, Minimize2, Eye, Radio, Crosshair, Volume2, VolumeX,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  playPossibleSound,
+  playConfirmedSound,
+  playAlertStateSound,
+} from '@/hooks/useCCTVSocket'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface PiStatus {
@@ -185,6 +190,13 @@ export default function RPi5LivePage() {
   // Config panel
   const [showConfig, setShowConfig] = useState(false)
 
+  // Mute toggle for alert sounds
+  const [muted, setMuted] = useState(false)
+  const mutedRef = useRef(false)
+
+  // Track previous accident status to detect transitions
+  const prevAccStatusRef = useRef<string>('NORMAL')
+
   // Stream keys — incrementing forces the <img> to reconnect
   // usbKey bumps whenever Pi switches camera
   const [usbKey, setUsbKey] = useState(0)
@@ -248,6 +260,19 @@ export default function RPi5LivePage() {
   const acc       = status?.accident
   const accStatus = acc?.status ?? 'NORMAL'
 
+  // ── Fire sound on accident state transitions ─────────────────────
+  useEffect(() => {
+    const prev = prevAccStatusRef.current
+    if (accStatus !== prev) {
+      prevAccStatusRef.current = accStatus
+      // Only play when escalating (NORMAL→POSSIBLE→CONFIRMED→ALERT)
+      // Do NOT play when going back to NORMAL (cooldown reset — no sound)
+      if (accStatus === 'POSSIBLE')  playPossibleSound(mutedRef.current)
+      if (accStatus === 'CONFIRMED') playConfirmedSound(mutedRef.current)
+      if (accStatus === 'ALERT')     playAlertStateSound(mutedRef.current)
+    }
+  }, [accStatus])
+
   return (
     <div className="h-full flex flex-col bg-gray-950 overflow-hidden">
 
@@ -292,6 +317,23 @@ export default function RPi5LivePage() {
               <span className={ACC_COLOUR[accStatus]}>{accStatus}</span>
             </span>
           )}
+
+          {/* Mute toggle */}
+          <button
+            onClick={() => {
+              setMuted(m => { mutedRef.current = !m; return !m })
+            }}
+            title={muted ? 'Unmute alerts' : 'Mute alerts'}
+            className={cn(
+              'flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border font-medium transition-colors',
+              muted
+                ? 'bg-gray-800 text-gray-500 border-gray-700 hover:text-white'
+                : 'bg-gray-800 text-gray-300 border-gray-700 hover:text-white',
+            )}>
+            {muted
+              ? <><VolumeX className="h-3 w-3" /> Muted</>
+              : <><Volume2 className="h-3 w-3" /> Sound</>}
+          </button>
 
           <a href={piBase} target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 px-2 py-1 bg-blue-950/30 border border-blue-700/30 rounded-lg transition-colors">
