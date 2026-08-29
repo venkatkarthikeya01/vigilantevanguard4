@@ -565,29 +565,42 @@ async def receive_rpi_incident(
         })
 
     # ── Broadcast via WebSocket to all dashboard clients ──────────
+    # NOTE: the hook (useCCTVSocket.ts) listens for msg.event not msg.type.
+    # We send both so it works regardless of which field the client reads.
+    _inc_ws = {
+        "incident_id":    incident["incident_id"],
+        "incident_type":  incident["incident_type"],
+        "confidence":     incident["confidence"],
+        "severity": {
+            "level":       incident["severity"]["level"],
+            "score":       incident["severity"]["score"],
+            "colour":      incident["severity"]["colour"],
+            "description": incident["severity"].get("description", ""),
+        },
+        "camera_id":      incident["camera_id"],
+        "camera_name":    incident["camera_name"],
+        "camera_location":incident["camera_location"],
+        "latitude":       incident["latitude"],
+        "longitude":      incident["longitude"],
+        "timestamp":      incident["timestamp"],
+        "timestamp_local":incident.get("timestamp_local", ""),
+        "ai_summary":     incident["ai_summary"],
+        "snapshot":       incident["snapshot"],
+        "status":         "PENDING",
+        "source":         "rpi5",
+        "assigned_station": incident["assigned_station"],
+        "dispatch_recommended": incident.get("dispatch_recommended", False),
+        "video_path":     "",
+        "video_url":      payload.video.cloud_url,
+        "maps_url":       payload.location.maps_url or payload.location.google_maps,
+        "rpi":            incident["rpi"],
+    }
     ws_payload = {
-        "type":        "NEW_INCIDENT",
+        "event":       "NEW_INCIDENT",   # ← useCCTVSocket.ts listens on msg.event
+        "type":        "NEW_INCIDENT",   # ← kept for any legacy clients
         "source":      "rpi5",
         "incident_id": incident["incident_id"],
-        "incident":    {
-            "incident_id":    incident["incident_id"],
-            "incident_type":  incident["incident_type"],
-            "severity_level": incident["severity"]["level"],
-            "severity_score": incident["severity"]["score"],
-            "severity_colour":incident["severity"]["colour"],
-            "camera_id":      incident["camera_id"],
-            "camera_name":    incident["camera_name"],
-            "camera_location":incident["camera_location"],
-            "latitude":       incident["latitude"],
-            "longitude":      incident["longitude"],
-            "timestamp":      incident["timestamp"],
-            "ai_summary":     incident["ai_summary"],
-            "snapshot":       incident["snapshot"],
-            "assigned_station": incident["assigned_station"],
-            "video_url":      payload.video.cloud_url,
-            "maps_url":       payload.location.maps_url,
-            "rpi":            incident["rpi"],
-        },
+        "incident":    _inc_ws,
     }
     try:
         await _WS_MANAGER.broadcast(ws_payload)

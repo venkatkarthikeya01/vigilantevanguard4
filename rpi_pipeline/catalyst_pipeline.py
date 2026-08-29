@@ -102,14 +102,26 @@ except Exception as _sv_err:
     _SV_OK = False
     print(f"[Tracking] Supervision import error — tracking disabled: {_sv_err}")
 
-# ── Catalyst snapshot/training integration (optional) ─────────────
+# ── Catalyst snapshot/training + incident push (optional) ──────────
 try:
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "modules"))
-    from rpi_catalyst import upload_snapshot as _cat_upload_snapshot
+    from rpi_catalyst import upload_snapshot as _cat_upload_snapshot, push_to_catalyst as _cat_push
     _CATALYST_AVAILABLE = True
 except ImportError:
     _CATALYST_AVAILABLE = False
     def _cat_upload_snapshot(*a, **kw): return None
+    def _cat_push(*a, **kw): return None
+
+# ── Severity engine (optional) ──────────────────────────────────────
+try:
+    from severity_engine import SeverityEngine as _SeverityEngine, Detection as _SevDetection
+    _severity_engine = _SeverityEngine()
+    _SEVERITY_AVAILABLE = True
+except ImportError:
+    _SeverityEngine = None
+    _SevDetection   = None
+    _severity_engine = None
+    _SEVERITY_AVAILABLE = False
 
 # ══════════════════════════════════════════════════════════════════
 # CONFIG
@@ -767,7 +779,8 @@ def _score(dets):
 
 
 def _update_accident(dets):
-    _snap_event_id = None
+    _snap_event_id  = None
+    _alert_dets     = None
     with _acc_lock:
         fs  = _score(dets)
         st  = _acc_state
@@ -794,16 +807,100 @@ def _update_accident(dets):
             st["event_ts"]      = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             st["confirm_count"] = 0
             st["score"]         = 0
-            # Capture snapshot for training — do it outside _acc_lock to avoid deadlock
+            # Capture snapshot + push to Catalyst — outside _acc_lock to avoid deadlock
             _snap_event_id = st["event_id"]
+            _alert_dets    = list(dets)   # copy for use outside lock
             print(f"[Accident] ⚠ ALERT  {st['event_id']}")
-
         else:
             _snap_event_id = None
 
-    # ── Capture snapshot outside lock ────────────────────────────
+    # ── Outside lock: snapshot + Catalyst push ───────────────────
     if _snap_event_id:
-        _capture_training_snapshot(_snap_event_id, dets)
+        _capture_training_snapshot(_snap_event_id, _alert_dets or dets)
+        _push_incident_to_catalyst(_snap_event_id, _alert_dets or dets)
+
+
+def _push_incident_to_catalyst(event_id: str, dets: list) -> None:
+    """
+    Build a SeverityResult from the current detections and push the incident
+    to the Catalyst AppSail backend (POST /api/v1/rpi/incident) in a daemon
+    thread so the inference loop is never blocked.
+
+    Falls back gracefully if:
+      - severity_engine not installed  → uses a minimal stub SeverityResult
+      - CATALYST_WEBHOOK_URL not set  → push_to_catalyst() silently skips
+      - Any other error               → logged, pipeline continues
+    """
+    if not _CATALYST_AVAILABLE:
+        return
+
+    def _do_push():
+        try:
+            # ── GPS coordinates ──────────────────────────────────
+            with _gps_lock:
+                lat = _gps_state.get("lat") or 0.0
+                lng = _gps_state.get("lng") or 0.0
+                gps_fix = _gps_state.get("fix", False)
+
+            # ── Build SeverityResult ─────────────────────────────
+            if _SEVERITY_AVAILABLE and _SevDetection is not None:
+                # Convert our detection dicts → SeverityEngine Detection objects
+                sev_dets = []
+                for d in dets:
+                    try:
+                        sev_dets.append(_SevDetection(
+                            class_id   = d["class_id"],
+                            class_name = d["class_name"],
+                            confidence = d["score"],
+                            bbox       = (d["px1"], d["py1"], d["px2"], d["py2"]),
+                        ))
+                    except Exception:
+                        pass
+                severity_result = _severity_engine.assess(
+                    detections  = sev_dets,
+                    lat         = lat if gps_fix else None,
+                    lng         = lng if gps_fix else None,
+                    address     = "",
+                    incident_id = event_id,
+                )
+            else:
+                # Minimal stub when severity_engine not available
+                from types import SimpleNamespace
+                classes = list({d["class_name"] for d in dets})
+                severity_result = SimpleNamespace(
+                    severity_label    = "HIGH",
+                    severity_score    = 3,
+                    primary_class     = classes[0] if classes else "accident",
+                    all_classes       = classes,
+                    vehicle_count     = sum(1 for d in dets if d["class_id"] in {2,3,4,9,14}),
+                    person_down       = any(d["class_id"] == 6 for d in dets),
+                    fire_detected     = any(d["class_id"] == 15 for d in dets),
+                    rollover_detected = any(d["class_id"] == 13 for d in dets),
+                    dispatch_actions  = ["voice_police", "voice_ambulance"],
+                    description       = f"Accident detected: {', '.join(classes[:4])}",
+                )
+
+            # ── Camera ID from current mode ───────────────────────
+            cam_id = f"RPI5-{camera_mode.upper()}"
+
+            print(f"[Catalyst] Pushing incident {event_id}  "
+                  f"severity={severity_result.severity_label}  "
+                  f"classes={severity_result.all_classes[:3]}")
+
+            _cat_push(
+                incident_id    = event_id,
+                severity_result= severity_result,
+                lat            = lat if gps_fix else 0.0,
+                lng            = lng if gps_fix else 0.0,
+                address_short  = "",
+                address_full   = "",
+                camera_id      = cam_id,
+                blocking       = False,
+            )
+        except Exception as exc:
+            print(f"[Catalyst] Push error (non-fatal): {exc}")
+
+    threading.Thread(target=_do_push, daemon=True, name=f"cat-push-{event_id}").start()
 
 # ══════════════════════════════════════════════════════════════════
 # HAILO THREAD — owns ALL Hailo resources via proper context managers
