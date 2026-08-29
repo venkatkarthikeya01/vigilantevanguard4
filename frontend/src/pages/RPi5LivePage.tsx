@@ -25,7 +25,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Cpu, Camera, Wifi, WifiOff, RefreshCw, Activity,
   Zap, AlertTriangle, ExternalLink, Settings,
-  Maximize2, Minimize2, Eye, Radio, Crosshair, Volume2, VolumeX,
+  Maximize2, Minimize2, Eye, Radio, Crosshair, Volume2, VolumeX, ChevronRight,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
