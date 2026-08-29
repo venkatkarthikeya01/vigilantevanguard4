@@ -2793,9 +2793,26 @@ async def get_model_info():
     onnx_path = next((p for p in _onnx_candidates if os.path.exists(p)), None)
     onnx_size_mb = round(os.path.getsize(onnx_path) / 1024 / 1024, 2) if onnx_path else None
 
-    # Roboflow dataset info (read from uploaded data.yaml if present)
+    # ── HEF model deployed on RPi5 edge unit ─────────────────────────────────
+    # The compiled HEF (yolov11n.hef) is a CUSTOM 27-class accident-detection model.
+    # This is DIFFERENT from the 10-class "Accident Signals v2" Roboflow dataset
+    # used only for initial cloud classifier training.
+    # The 27 class IDs/names are authoritative and defined in catalyst_pipeline.py.
+    hef_class_names_27 = [
+        "accident",            "ambulance",           "auto_rickshaw",
+        "bus",                 "car",                 "damaged_vehicle",
+        "fallen_injured_person","firetruck",           "license_plate",
+        "motorcycle",          "person",              "police_vehicle",
+        "road_debris",         "tipped_over",         "truck",
+        "vehicle_fire",        "damaged_head_light",  "damaged_hood",
+        "damaged_trunk",       "damaged_window",      "damaged_windscreen",
+        "damaged_bumper",      "damaged_door",        "damaged_fender",
+        "damaged_mirror_glass","dent_or_scratch",     "missing_grille",
+    ]
+
+    # ── Roboflow 10-class dataset info (cloud training only, NOT the HEF) ────
     dataset_info = {
-        "name": "Accident Signals v2 (Roboflow)",
+        "name": "Accident Signals v2 (Roboflow) — cloud training only",
         "classes": 10,
         "class_names": [
             "auto_rickshaw", "bus", "car", "damaged_vehicle", "license_plate",
@@ -2805,6 +2822,10 @@ async def get_model_info():
         "val_images":   "~30",
         "source":       "Roboflow Universe — VigilanteVanguard custom dataset",
         "augmented":    True,
+        "note":         (
+            "This 10-class dataset was used for cloud classifier (RF/SVM) training. "
+            "The RPi5 HEF model uses a separate 27-class custom dataset."
+        ),
     }
 
     # Training metrics from last benchmark
@@ -2826,16 +2847,22 @@ async def get_model_info():
     return {
         "models": {
             "hailo_yolo": {
-                "name":         "YOLOv11n (Custom Accident Signals)",
+                "name":         "YOLOv11n (Custom 27-Class Accident Detection)",
                 "format":       "Hailo HEF (RPi5 Hailo-8L NPU)",
                 "base_model":   "yolov11n",
-                "trained_on":   "Accident Signals v2i — 10 classes",
-                "classes":      10,
-                "class_names":  dataset_info["class_names"],
+                "trained_on":   "Custom 27-class accident-detection dataset",
+                "classes":      27,
+                "class_names":  hef_class_names_27,
                 "input_size":   "640×640",
-                "status":       "ACTIVE — running on RPi5 edge unit",
-                "replaces":     "yolov11n.hef (generic base — REPLACED by custom)",
-                "note":         "HEF compiled from custom ONNX for Hailo NPU",
+                "status":       "ACTIVE — running on RPi5 edge unit (Hailo-8L NPU)",
+                "replaces":     "yolov11n.hef (generic base — REPLACED by custom 27-class model)",
+                "note":         (
+                    "27 classes: accident, ambulance, auto_rickshaw, bus, car, "
+                    "damaged_vehicle, fallen_injured_person, firetruck, license_plate, "
+                    "motorcycle, person, police_vehicle, road_debris, tipped_over, truck, "
+                    "vehicle_fire, + 11 damage classes (damaged_head_light … missing_grille). "
+                    "HEF compiled for Hailo-8L NPU from custom ONNX."
+                ),
             },
             "onnx_model": {
                 "name":        "YOLOv11n Custom ONNX",

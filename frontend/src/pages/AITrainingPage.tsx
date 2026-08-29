@@ -96,10 +96,10 @@ function ModelStatusBanner() {
           <div className="mt-0.5 space-y-0.5">
             {yoloReady ? (
               <p className="text-[10px] text-yellow-400 font-medium">
-                ⚡ YOLO Cloud model active (Accident Signals v2 — 10 classes)
+                ⚡ YOLO Cloud model active (27-class custom accident-detection model)
               </p>
             ) : (
-              <p className="text-[10px] text-gray-500">Upload best.pt to activate YOLO PRIMARY detector</p>
+              <p className="text-[10px] text-gray-500">Upload best.pt / best.onnx to activate YOLO PRIMARY detector</p>
             )}
             <p className="text-[10px] text-green-500">
               {size} vectors · {labels} labels · threshold 0.35

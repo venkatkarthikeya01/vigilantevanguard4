@@ -3,19 +3,22 @@
  * Raspberry Pi 5 Live View
  *
  * HOW STREAMS WORK:
- *   Pi runs Flask at http://192.168.1.8:5000
+ *   Pi runs Flask at http://<piIp>:5000
  *   /video_feed  → MJPEG stream of whichever camera the Pi has active (USB or IP)
- *   /switch?camera=usb  → tells Pi to switch to USB C270
- *   /switch?camera=ip   → tells Pi to switch to phone IP cam
+ *   /switch?camera=usb  → tells Pi to switch to USB camera
+ *   /switch?camera=ip   → tells Pi to switch to IP cam feed
  *   /status      → JSON status (fps, detections, accident engine, GPS, LTE)
  *
- *   USB C270 panel   → always http://192.168.1.8:5000/video_feed
+ *   Pi Camera panel  → always http://<piIp>:5000/video_feed
  *                       (refreshes with a new key after switching so MJPEG reconnects)
- *   IP Cam panel     → always http://192.168.1.9:8081/video  (direct phone, no Pi relay)
+ *   IP Cam panel     → direct stream from phone IP Webcam app (no Pi relay)
  *
  * BUTTONS:
- *   "Switch to USB C270"  → POST /switch?camera=usb, reload USB stream
- *   "Switch to IP Cam"    → POST /switch?camera=ip,  USB stream now shows IP cam via Pi
+ *   "Switch Hailo to Pi Cam"  → POST /switch?camera=usb, reload Pi stream
+ *   "Switch Hailo to IP Cam"  → POST /switch?camera=ip,  Pi stream now shows IP cam via Pi
+ *
+ * NOTE: When Pi is offline, IP Cam panel is the primary live view.
+ *       Default active cam is 'ip' so IP cam shows as primary until Pi responds.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -164,11 +167,14 @@ function MJPEGPanel({
 // ── Main page ──────────────────────────────────────────────────────
 export default function RPi5LivePage() {
   // Persisted settings
-  const [piIp,     setPiIp]     = useState(() => localStorage.getItem('vv_rpi_ip')    || '192.168.1.8')
-  const [ipCamUrl, setIpCamUrl] = useState(() => localStorage.getItem('vv_ipcam_url') || 'http://192.168.1.9:8081/video')
+  const [piIp,       setPiIp]       = useState(() => localStorage.getItem('vv_rpi_ip')      || '192.168.1.8')
+  const [ipCamUrl,   setIpCamUrl]   = useState(() => localStorage.getItem('vv_ipcam_url')   || 'http://192.168.1.9:8081/video')
+  const [piCamLabel, setPiCamLabel] = useState(() => localStorage.getItem('vv_picam_label') || 'Pi Camera Feed')
+  const [ipCamLabel, setIpCamLabel] = useState(() => localStorage.getItem('vv_ipcam_label') || 'IP Camera (Phone)')
 
-  // Which camera is active on the Pi (USB or IP)
-  const [activeCam,    setActiveCam]    = useState<'usb' | 'ip'>('usb')
+  // Default to 'ip' so the IP cam shows as active when Pi is offline
+  // (gets overridden by Pi /status response once Pi is online)
+  const [activeCam,    setActiveCam]    = useState<'usb' | 'ip'>('ip')
   const [switching,    setSwitching]    = useState(false)
   const [switchErr,    setSwitchErr]    = useState('')
 
@@ -186,11 +192,11 @@ export default function RPi5LivePage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Derived URLs
-  const piBase     = `http://${piIp}:5000`
-  // The USB panel ALWAYS shows the Pi's encoded/annotated stream
-  const usbStream  = `${piBase}/video_feed`
-  // The IP panel ALWAYS shows the phone directly — never goes through Pi
-  const ipStream   = ipCamUrl.trim()
+  const piBase    = `http://${piIp}:5000`
+  // Pi panel: always the Pi's annotated MJPEG stream (whatever camera Pi has active)
+  const usbStream = `${piBase}/video_feed`
+  // IP panel: always the phone directly — never goes through Pi
+  const ipStream  = ipCamUrl.trim()
 
   // ── Poll Pi /status ──────────────────────────────────────────────
   const fetchStatus = useCallback(async () => {
@@ -313,12 +319,30 @@ export default function RPi5LivePage() {
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-[10px] text-gray-400 whitespace-nowrap">Phone IP Cam URL</label>
+            <label className="text-[10px] text-gray-400 whitespace-nowrap">IP Cam URL</label>
             <input
               value={ipCamUrl}
               onChange={e => { setIpCamUrl(e.target.value); localStorage.setItem('vv_ipcam_url', e.target.value) }}
               placeholder="http://192.168.1.9:8081/video"
-              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white w-64 focus:outline-none focus:border-blue-500"
+              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white w-60 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] text-gray-400 whitespace-nowrap">Pi Cam Label</label>
+            <input
+              value={piCamLabel}
+              onChange={e => { setPiCamLabel(e.target.value); localStorage.setItem('vv_picam_label', e.target.value) }}
+              placeholder="Pi Camera Feed"
+              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white w-36 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] text-gray-400 whitespace-nowrap">IP Cam Label</label>
+            <input
+              value={ipCamLabel}
+              onChange={e => { setIpCamLabel(e.target.value); localStorage.setItem('vv_ipcam_label', e.target.value) }}
+              placeholder="IP Camera (Phone)"
+              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white w-36 focus:outline-none focus:border-blue-500"
             />
           </div>
           <button onClick={fetchStatus}
@@ -326,8 +350,8 @@ export default function RPi5LivePage() {
             <RefreshCw className="h-3 w-3" /> Reconnect
           </button>
           <p className="text-[10px] text-gray-600">
-            Pi stream: <span className="text-gray-400">{usbStream}</span> &nbsp;|&nbsp;
-            Phone stream: <span className="text-gray-400">{ipStream}</span>
+            Pi: <span className="text-gray-400">{usbStream}</span> &nbsp;|&nbsp;
+            IP: <span className="text-gray-400">{ipStream}</span>
           </p>
         </div>
       )}
@@ -345,39 +369,51 @@ export default function RPi5LivePage() {
         {/* ── Two camera panels stacked ──────────────────────────── */}
         <div className="flex-1 min-w-0 flex flex-col gap-3 p-3 overflow-hidden">
 
-          {/* ── Panel 1: USB C270 — Pi annotated stream ── */}
+          {/* ── Panel 1: IP Cam — direct stream (always live, shown first) ── */}
           <div className="flex-1 min-h-0">
             <MJPEGPanel
-              title="USB C270 — Logitech Webcam (via Pi)"
-              icon={<Camera className="h-4 w-4" />}
-              badge={activeCam === 'usb' ? '⚡ Hailo Active' : 'USB C270'}
-              badgeColour={activeCam === 'usb' ? 'bg-blue-700 text-white' : 'bg-blue-900/50 text-blue-300'}
-              streamUrl={usbStream}
-              streamKey={usbKey}
-              isActive={activeCam === 'usb'}
-              onSwitchClick={() => switchTo('usb')}
-              switchLabel={switching ? 'Switching…' : 'Switch Hailo to USB C270'}
-              note={activeCam === 'ip'
-                ? '⚡ Hailo NPU is currently processing IP Cam — this shows the Pi\'s encoded stream. Click "Switch Hailo to USB C270" to run inference on this camera.'
-                : undefined}
-            />
-          </div>
-
-          {/* ── Panel 2: Phone IP Cam — direct stream ── */}
-          <div className="flex-1 min-h-0">
-            <MJPEGPanel
-              title="IP Camera — Phone (IP Webcam app, direct)"
+              title={`${ipCamLabel} — direct stream`}
               icon={<Wifi className="h-4 w-4" />}
               badge={activeCam === 'ip' ? '⚡ Hailo Active' : 'IP CAM'}
               badgeColour={activeCam === 'ip' ? 'bg-green-600 text-white' : 'bg-green-900/50 text-green-300'}
               streamUrl={ipStream}
               streamKey={0}
               isActive={activeCam === 'ip'}
-              onSwitchClick={() => switchTo('ip')}
+              onSwitchClick={piOnline ? () => switchTo('ip') : undefined}
               switchLabel={switching ? 'Switching…' : 'Switch Hailo to IP Cam'}
-              note={activeCam === 'usb'
+              note={activeCam === 'usb' && piOnline
                 ? 'Direct stream from phone (always live). Click "Switch Hailo to IP Cam" to run Hailo NPU on this feed.'
+                : !piOnline
+                ? '📡 Pi is offline — this IP cam stream is your live feed. Pi inference will activate when it comes online.'
                 : undefined}
+            />
+          </div>
+
+          {/* ── Panel 2: Pi Camera Feed — Pi annotated MJPEG stream ── */}
+          <div className="flex-1 min-h-0">
+            <MJPEGPanel
+              title={`${piCamLabel} (via Pi · ${piIp})`}
+              icon={<Camera className="h-4 w-4" />}
+              badge={
+                !piOnline      ? 'Pi Offline' :
+                activeCam === 'usb' ? '⚡ Hailo Active' : 'Pi Stream'
+              }
+              badgeColour={
+                !piOnline           ? 'bg-red-900/60 text-red-400' :
+                activeCam === 'usb' ? 'bg-blue-700 text-white' : 'bg-blue-900/50 text-blue-300'
+              }
+              streamUrl={usbStream}
+              streamKey={usbKey}
+              isActive={activeCam === 'usb' && piOnline === true}
+              onSwitchClick={piOnline ? () => switchTo('usb') : undefined}
+              switchLabel={switching ? 'Switching…' : 'Switch Hailo to Pi Cam'}
+              note={
+                !piOnline
+                  ? `⚠ Pi is offline (${piBase}). Check that the Pi is powered on and connected to the same network. The IP cam above is your live feed.`
+                  : activeCam === 'ip'
+                  ? '⚡ Hailo NPU is currently processing IP Cam — click "Switch Hailo to Pi Cam" to run inference on this camera instead.'
+                  : undefined
+              }
             />
           </div>
         </div>
@@ -392,27 +428,34 @@ export default function RPi5LivePage() {
               <Crosshair className="h-3 w-3" /> Hailo Camera Switch
             </p>
             <p className="text-[10px] text-gray-600 leading-relaxed">
-              Hailo NPU processes <strong className="text-gray-400">one</strong> camera at a time.
-              Switching changes which feed gets inference + accident detection.
-            </p>
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <button
-                onClick={() => switchTo('usb')}
-                disabled={switching || activeCam === 'usb'}
-                className={cn(
-                  'flex flex-col items-center gap-1 py-3 rounded-xl text-xs font-bold transition-all border',
-                  activeCam === 'usb'
-                    ? 'bg-blue-700 border-blue-500 text-white cursor-default'
-                    : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-blue-900/40 hover:border-blue-700 hover:text-blue-300',
-                  switching && 'opacity-50',
-                )}>
-                <Camera className="h-5 w-5" />
-                <span>USB C270</span>
-                {activeCam === 'usb' && <span className="text-[9px] text-blue-300 font-normal">● Active</span>}
-              </button>
-              <button
-                onClick={() => switchTo('ip')}
-                disabled={switching || activeCam === 'ip'}
+             Hailo NPU processes <strong className="text-gray-400">one</strong> camera at a time.
+             Switching changes which feed gets inference + accident detection.
+           </p>
+           {!piOnline && (
+             <p className="text-[10px] text-red-400 bg-red-950/30 rounded px-2 py-1">
+               ⚠ Pi offline — switch buttons disabled until Pi connects
+             </p>
+           )}
+           <div className="grid grid-cols-2 gap-2 pt-1">
+             <button
+               onClick={() => switchTo('ip')}
+               disabled={switching || activeCam === 'ip' || !piOnline}
+               className={cn(
+                 'flex flex-col items-center gap-1 py-3 rounded-xl text-xs font-bold transition-all border',
+                 activeCam === 'ip'
+                   ? 'bg-green-700 border-green-500 text-white cursor-default'
+                   : !piOnline
+                   ? 'bg-gray-800 border-gray-700 text-gray-600 cursor-not-allowed opacity-50'
+                   : 'bg-gray-800 border-gray-700 text-gray-400 hover:bg-green-900/40 hover:border-green-700 hover:text-green-300',
+                 switching && 'opacity-50',
+               )}>
+               <Wifi className="h-5 w-5" />
+               <span>IP Cam</span>
+               {activeCam === 'ip' && <span className="text-[9px] text-green-300 font-normal">● Active</span>}
+             </button>
+             <button
+               onClick={() => switchTo('usb')}
+               disabled={switching || activeCam === 'usb' || !piOnline}
                 className={cn(
                   'flex flex-col items-center gap-1 py-3 rounded-xl text-xs font-bold transition-all border',
                   activeCam === 'ip'
