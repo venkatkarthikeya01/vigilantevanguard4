@@ -714,6 +714,133 @@ async def list_rpi_incidents(
     }
 
 
+class DemoTriggerReq(BaseModel):
+    incident_type: str = "car_accident"   # one of the _RPi_TO_CCTV_TYPE keys
+
+# Demo GPS locations in Karnataka (cycles round-robin)
+_DEMO_LOCATIONS = [
+    {"lat": 12.9716, "lng": 77.5946, "address": "Bengaluru, Mysore Road, Karnataka"},
+    {"lat": 12.9784, "lng": 77.6408, "address": "Bengaluru, Koramangala, Karnataka"},
+    {"lat": 13.0827, "lng": 80.2707, "address": "Chennai–Bengaluru NH, Karnataka"},
+    {"lat": 15.8497, "lng": 74.4977, "address": "Belagavi, NH-48, Karnataka"},
+    {"lat": 12.2958, "lng": 76.6394, "address": "Mysuru, Chamundi Hill Road, Karnataka"},
+    {"lat": 14.4663, "lng": 75.9238, "address": "Davangere, NH-48 Junction, Karnataka"},
+    {"lat": 13.3409, "lng": 77.1180, "address": "Tumkur, NH-48, Karnataka"},
+    {"lat": 15.3647, "lng": 75.1240, "address": "Hubballi–Dharwad, NH-67, Karnataka"},
+]
+_demo_loc_idx = 0
+
+
+@router.post("/demo")
+async def trigger_demo_incident(req: DemoTriggerReq):
+    """
+    Trigger a demo incident directly from the Catalyst frontend dashboard.
+    No HMAC signature required — authenticated via the normal Bearer token.
+    Creates a realistic incident and injects it into the notification pipeline.
+    """
+    global _demo_loc_idx
+    loc_data = _DEMO_LOCATIONS[_demo_loc_idx % len(_DEMO_LOCATIONS)]
+    _demo_loc_idx += 1
+
+    itype = req.incident_type if req.incident_type in _RPi_TO_CCTV_TYPE else "car_accident"
+    ts    = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    ts_local = time.strftime("%d %b %Y %H:%M:%S IST",
+                             time.localtime(time.time() + 5.5 * 3600))
+    incident_id = f"DEMO-{int(time.time())}"
+
+    severity_label = {
+        "car_accident":    "HIGH",
+        "bike_accident":   "HIGH",
+        "truck_accident":  "CRITICAL",
+        "bus_accident":    "CRITICAL",
+        "auto_accident":   "MEDIUM",
+        "pedestrian_hit":  "CRITICAL",
+        "person_down":     "HIGH",
+        "multi_vehicle":   "CRITICAL",
+    }.get(itype, "HIGH")
+
+    payload = RpiIncidentPayload(
+        source          = "VigilanteVanguard_Demo",
+        camera_id       = "DEMO-CAM",
+        incident_id     = incident_id,
+        timestamp_utc   = ts,
+        timestamp_local = ts_local,
+        severity        = RpiSeverity(
+            label = severity_label,
+            score = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}.get(severity_label, 3),
+        ),
+        incident        = RpiIncident(
+            type          = itype,
+            description   = f"Demo {itype.replace('_',' ')} triggered from Catalyst dashboard",
+            all_classes   = [itype],
+            vehicle_count = 2 if "multi" in itype else 1,
+            person_down   = itype in ("pedestrian_hit", "person_down"),
+            fire_detected = itype == "vehicle_fire",
+            rollover      = itype == "vehicle_rollover",
+            plates        = ["KA-05-AB-1234"],
+        ),
+        location        = RpiLocation(
+            lat           = loc_data["lat"],
+            lng           = loc_data["lng"],
+            address_short = loc_data["address"],
+            address_full  = loc_data["address"],
+            maps_url      = f"https://www.google.com/maps/search/?api=1&query={loc_data['lat']},{loc_data['lng']}",
+            google_maps   = f"https://maps.google.com/?q={loc_data['lat']},{loc_data['lng']}",
+        ),
+        video           = RpiVideo(cloud_url="", available=False),
+        dispatch        = RpiDispatch(actions=["DISPATCH_AMBULANCE", "DISPATCH_POLICE"]),
+    )
+
+    incident = _rpi_to_cctv_incident(payload)
+
+    if _CCTV_AVAILABLE:
+        _INCIDENTS.insert(0, incident)
+        from app.routers.cctv import _make_notification
+        _make_notification(incident)
+    else:
+        _RPI_INCIDENTS.insert(0, incident)
+
+    ws_payload = {
+        "event":       "NEW_INCIDENT",
+        "type":        "NEW_INCIDENT",
+        "source":      "demo",
+        "incident_id": incident["incident_id"],
+        "incident":    {
+            "incident_id":    incident["incident_id"],
+            "incident_type":  incident["incident_type"],
+            "confidence":     incident["confidence"],
+            "severity":       incident["severity"],
+            "camera_id":      incident["camera_id"],
+            "camera_name":    incident["camera_name"],
+            "camera_location":incident["camera_location"],
+            "latitude":       incident["latitude"],
+            "longitude":      incident["longitude"],
+            "timestamp":      incident["timestamp"],
+            "ai_summary":     incident["ai_summary"],
+            "snapshot":       incident["snapshot"],
+            "status":         "PENDING",
+            "source":         "demo",
+            "assigned_station": incident["assigned_station"],
+        },
+    }
+    try:
+        import asyncio
+        asyncio.create_task(_WS_MANAGER.broadcast(ws_payload))
+    except Exception:
+        pass
+
+    print(f"[RPi-Demo] Triggered {itype} at {loc_data['address']}  id={incident_id}")
+
+    return JSONResponse(status_code=200, content={
+        "status":       "triggered",
+        "incident_id":  incident["incident_id"],
+        "incident_type": incident["incident_type"],
+        "severity":     severity_label,
+        "location":     loc_data["address"],
+        "message":      f"Demo incident injected into Police Alerts & Crime Map.",
+    })
+
+
 # ═══════════════════════════════════════════════════════════════════
 #  FOOTAGE ENDPOINTS
 #  Police officers use these to browse + download evidence videos

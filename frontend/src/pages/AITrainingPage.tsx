@@ -1737,7 +1737,7 @@ function IPCamCapturePanel({ labels, onCaptured }: { labels: string[]; onCapture
 // ══════════════════════════════════════════════════════════════════
 function ModelUploadPanel() {
   const [file,     setFile]     = useState<File | null>(null)
-  const [piIp,     setPiIp]     = useState(() => localStorage.getItem('vv_rpi_ip') || '192.168.1.8')
+   const [piIp,     setPiIp]     = useState(() => localStorage.getItem('vv_rpi_ip') || '192.168.137.186')
   const [status,   setStatus]   = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
   const [msg,      setMsg]      = useState('')
   const [progress, setProgress] = useState(0)

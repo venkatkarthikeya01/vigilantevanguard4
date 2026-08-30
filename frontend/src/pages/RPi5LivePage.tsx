@@ -26,6 +26,7 @@ import {
   Cpu, Camera, Wifi, WifiOff, RefreshCw, Activity,
   Zap, AlertTriangle, ExternalLink, Settings,
   Maximize2, Minimize2, Eye, Radio, Crosshair, Volume2, VolumeX, ChevronRight,
+  Siren, CheckCircle, XCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -33,6 +34,7 @@ import {
   playConfirmedSound,
   playAlertStateSound,
 } from '@/hooks/useCCTVSocket'
+import { apiClient } from '@/lib/api'
 
 // ── Types ──────────────────────────────────────────────────────────
 interface PiStatus {
@@ -190,6 +192,11 @@ export default function RPi5LivePage() {
   // Config panel
   const [showConfig, setShowConfig] = useState(false)
 
+  // Demo trigger
+  const [demoType,       setDemoType]       = useState('car_accident')
+  const [demoTriggering, setDemoTriggering] = useState(false)
+  const [demoResult,     setDemoResult]     = useState<{ ok: boolean; msg: string } | null>(null)
+
   // Mute toggle for alert sounds
   const [muted, setMuted] = useState(false)
   const mutedRef = useRef(false)
@@ -254,6 +261,28 @@ export default function RPi5LivePage() {
       setSwitchErr(e?.message ?? 'No response from Pi')
     } finally {
       setSwitching(false)
+    }
+  }
+
+  // ── Trigger demo incident ─────────────────────────────────────────
+  async function triggerDemo() {
+    if (demoTriggering) return
+    setDemoTriggering(true)
+    setDemoResult(null)
+    try {
+      const res = await apiClient.post('/rpi/demo', { incident_type: demoType })
+      setDemoResult({
+        ok:  true,
+        msg: `✅ ${res.data.severity} ${res.data.incident_type} injected → Police Alerts`,
+      })
+    } catch (e: any) {
+      setDemoResult({
+        ok:  false,
+        msg: `❌ ${e?.response?.data?.detail ?? e?.message ?? 'Request failed'}`,
+      })
+    } finally {
+      setDemoTriggering(false)
+      setTimeout(() => setDemoResult(null), 6000)
     }
   }
 
@@ -629,6 +658,65 @@ export default function RPi5LivePage() {
                     <span className="text-blue-400 font-mono w-7 text-right flex-shrink-0">{Math.round(d.score * 100)}%</span>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── TRIGGER DEMO INCIDENT ──────────────────────────────────── */}
+          <div className="rounded-xl border border-orange-700/50 bg-orange-950/20 p-3 space-y-2">
+            <p className="text-[10px] font-semibold text-orange-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Siren className="h-3 w-3" /> Trigger Demo Incident
+            </p>
+            <p className="text-[10px] text-gray-500 leading-relaxed">
+              Injects a demo incident directly into Police Alerts &amp; Crime Map — no Pi required.
+            </p>
+
+            {/* Incident type selector */}
+            <select
+              value={demoType}
+              onChange={e => setDemoType(e.target.value)}
+              className="w-full bg-gray-900 border border-gray-700 rounded px-2 py-1.5
+                         text-xs text-white focus:outline-none focus:border-orange-500"
+            >
+              <option value="car_accident">🚗 Car Accident</option>
+              <option value="bike_accident">🏍 Bike Accident</option>
+              <option value="truck_accident">🚛 Truck Accident</option>
+              <option value="bus_accident">🚌 Bus Accident</option>
+              <option value="auto_accident">🛺 Auto Accident</option>
+              <option value="pedestrian_hit">🚶 Pedestrian Hit</option>
+              <option value="person_down">🧍 Person Down</option>
+              <option value="multi_vehicle">💥 Multi-Vehicle Collision</option>
+            </select>
+
+            {/* Trigger button */}
+            <button
+              onClick={triggerDemo}
+              disabled={demoTriggering}
+              className={cn(
+                'w-full flex items-center justify-center gap-2 py-2 rounded-lg',
+                'text-xs font-bold transition-colors border',
+                demoTriggering
+                  ? 'bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed'
+                  : 'bg-orange-700 hover:bg-orange-600 border-orange-600 text-white'
+              )}
+            >
+              {demoTriggering
+                ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Triggering…</>
+                : <><Siren className="h-3.5 w-3.5" /> TRIGGER DEMO INCIDENT</>}
+            </button>
+
+            {/* Result banner */}
+            {demoResult && (
+              <div className={cn(
+                'flex items-start gap-2 rounded-lg px-2.5 py-2 text-[11px]',
+                demoResult.ok
+                  ? 'bg-green-950/50 border border-green-700/50 text-green-300'
+                  : 'bg-red-950/50  border border-red-700/50  text-red-300'
+              )}>
+                {demoResult.ok
+                  ? <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                  : <XCircle     className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />}
+                <span className="leading-relaxed">{demoResult.msg}</span>
               </div>
             )}
           </div>
