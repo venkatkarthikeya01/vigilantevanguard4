@@ -1894,39 +1894,64 @@ def demo_accident():
     print(f"[Demo] ⚠ DEMO TRIGGERED — {event_id}  type={accident_type}  (NOT REAL)")
 
     # Push to Catalyst Police Alerts in background
-    if _CATALYST_AVAILABLE:
-        def _push_demo():
-            try:
-                from types import SimpleNamespace
-                lat = gps.get("lat") or 12.8606  # Nanjangud fallback
-                lng = gps.get("lng") or 76.6826
-                gps_fix = gps.get("fix", False)
-                classes = classes_now
-                # Map accident type → severity
-                sev_map = {
-                    "Vehicle Fire":          ("CRITICAL", 4),
-                    "Person Down / Injured": ("CRITICAL", 4),
-                    "Multi-Vehicle Pile-up": ("CRITICAL", 4),
-                    "Head-on Collision":     ("HIGH", 3),
-                    "Rollover":              ("HIGH", 3),
-                    "Road Accident":         ("HIGH", 3),
-                    "Vehicle Collision":     ("MEDIUM", 2),
-                    "Hit and Run":           ("HIGH", 3),
-                }
-                sev_label, sev_score = sev_map.get(accident_type, ("HIGH", 3))
-                severity_result = SimpleNamespace(
-                    severity_label    = sev_label,
-                    severity_score    = sev_score,
-                    primary_class     = classes[0] if classes else "accident",
-                    all_classes       = classes,
-                    vehicle_count     = sum(1 for c in classes if c in ("car","truck","bus","motorcycle","auto_rickshaw")),
-                    person_down       = "fallen_injured_person" in classes,
-                    fire_detected     = "vehicle_fire" in classes,
-                    rollover_detected = "tipped_over" in classes,
-                    dispatch_actions  = ["voice_police", "voice_ambulance"],
-                    description       = f"DEMO: {accident_type} — {', '.join(classes[:4])}",
-                )
-                cam_id = f"RPI5-DEMO-{camera_mode.upper()}"
+    def _push_demo():
+        try:
+            from types import SimpleNamespace
+            import importlib, sys as _sys
+            # Re-read CATALYST_WEBHOOK_URL at push time so .env changes take effect
+            webhook_url = os.environ.get("CATALYST_WEBHOOK_URL", "").strip()
+            if not webhook_url:
+                print("[Demo] ✗ CATALYST_WEBHOOK_URL not set in .env — cannot push to Police Alerts")
+                print("[Demo]   Set it in the Pi dashboard → Save to Pi .env, then restart service")
+                return
+
+            lat     = gps.get("lat") or 12.8606  # Nanjangud fallback
+            lng     = gps.get("lng") or 76.6826
+            gps_fix = gps.get("fix", False)
+            classes = classes_now
+
+            # Map accident type → severity
+            sev_map = {
+                "Vehicle Fire":          ("CRITICAL", 4),
+                "Person Down / Injured": ("CRITICAL", 4),
+                "Multi-Vehicle Pile-up": ("CRITICAL", 4),
+                "Head-on Collision":     ("HIGH", 3),
+                "Rollover":              ("HIGH", 3),
+                "Road Accident":         ("HIGH", 3),
+                "Vehicle Collision":     ("MEDIUM", 2),
+                "Hit and Run":           ("HIGH", 3),
+            }
+            # Map accident type → CCTV incident_type string backend understands
+            type_map = {
+                "Vehicle Fire":          "vehicle_fire",
+                "Person Down / Injured": "person_down",
+                "Multi-Vehicle Pile-up": "multi_vehicle",
+                "Head-on Collision":     "head_on",
+                "Rollover":              "vehicle_rollover",
+                "Road Accident":         "car_accident",
+                "Vehicle Collision":     "multi_vehicle",
+                "Hit and Run":           "car_accident",
+            }
+            sev_label, sev_score = sev_map.get(accident_type, ("HIGH", 3))
+            inc_type = type_map.get(accident_type, "car_accident")
+
+            severity_result = SimpleNamespace(
+                severity_label    = sev_label,
+                severity_score    = sev_score,
+                incident_type     = inc_type,        # ← explicit type for backend mapping
+                primary_class     = classes[0] if classes else "accident",
+                all_classes       = classes,
+                vehicle_count     = sum(1 for c in classes if c in ("car","truck","bus","motorcycle","auto_rickshaw")),
+                person_down       = "fallen_injured_person" in classes,
+                fire_detected     = "vehicle_fire" in classes,
+                rollover_detected = "tipped_over" in classes,
+                dispatch_actions  = ["voice_police", "voice_ambulance"],
+                description       = f"DEMO: {accident_type} — {', '.join(classes[:4])}",
+            )
+            cam_id = f"RPI5-DEMO-{camera_mode.upper()}"
+
+            # Use blocking=True so we can log success/failure
+            if _CATALYST_AVAILABLE:
                 _cat_push(
                     incident_id     = event_id,
                     severity_result = severity_result,
@@ -1935,12 +1960,55 @@ def demo_accident():
                     address_short   = "Demo — Nanjangud Road" if not gps_fix else "",
                     address_full    = "",
                     camera_id       = cam_id,
-                    blocking        = False,
+                    blocking        = True,   # wait for result so we can log it
                 )
-                print(f"[Demo] Pushed to Catalyst: {event_id}  sev={sev_label}")
-            except Exception as exc:
-                print(f"[Demo] Catalyst push error: {exc}")
-        threading.Thread(target=_push_demo, daemon=True, name="demo-cat-push").start()
+                print(f"[Demo] ✓ Pushed to Catalyst Police Alerts: {event_id}  sev={sev_label}  type={inc_type}")
+            else:
+                # rpi_catalyst not imported — push directly with requests
+                import requests as _req, json as _json, hmac as _hmac, hashlib as _hs
+                secret = os.environ.get("RPI_WEBHOOK_SECRET", "rpi5_vv_default_secret_change_me")
+                body = _json.dumps({
+                    "source": "VigilanteVanguard_RPi5",
+                    "camera_id": cam_id,
+                    "incident_id": event_id,
+                    "timestamp_utc": datetime.utcnow().isoformat() + "Z",
+                    "timestamp_local": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "severity": {"label": sev_label, "score": sev_score},
+                    "incident": {
+                        "type": inc_type,
+                        "description": f"DEMO: {accident_type}",
+                        "all_classes": classes,
+                        "vehicle_count": severity_result.vehicle_count,
+                        "person_down": severity_result.person_down,
+                        "fire_detected": severity_result.fire_detected,
+                        "rollover": severity_result.rollover_detected,
+                        "plates": plate_list_now,
+                    },
+                    "location": {
+                        "lat": lat if gps_fix else 12.8606,
+                        "lng": lng if gps_fix else 76.6826,
+                        "address_short": "Demo — Nanjangud Road",
+                        "address_full": "",
+                        "maps_url": "",
+                        "google_maps": f"https://maps.google.com/?q={lat},{lng}",
+                    },
+                    "video":    {"cloud_url": "", "available": False},
+                    "dispatch": {"actions": ["voice_police", "voice_ambulance"]},
+                }).encode()
+                sig = "sha256=" + _hmac.new(secret.encode(), body, _hs.sha256).hexdigest()
+                resp = _req.post(webhook_url, data=body,
+                                 headers={"Content-Type": "application/json",
+                                          "X-VV-Signature": sig,
+                                          "X-VV-Source": "rpi5"},
+                                 timeout=15)
+                if resp.status_code in (200, 201, 202):
+                    print(f"[Demo] ✓ Pushed to Catalyst (direct): {event_id}  HTTP {resp.status_code}")
+                else:
+                    print(f"[Demo] ✗ Push failed HTTP {resp.status_code}: {resp.text[:200]}")
+        except Exception as exc:
+            print(f"[Demo] Catalyst push error: {exc}")
+
+    threading.Thread(target=_push_demo, daemon=True, name="demo-cat-push").start()
 
     return jsonify(ev)
 
@@ -1999,27 +2067,33 @@ def _write_env_key(key, value):
 def save_contacts():
     data = request.get_json(silent=True) or {}
     try:
-        police    = str(data.get("police",    "")).strip()
-        ambulance = str(data.get("ambulance", "")).strip()
-        fire      = str(data.get("fire",      "")).strip()
-        email     = str(data.get("email",     "")).strip()
-        if police:    _write_env_key("POLICE_NUMBER",    police)
-        if ambulance: _write_env_key("AMBULANCE_NUMBER", ambulance)
-        if fire:      _write_env_key("FIRE_NUMBER",      fire)
-        if email:     _write_env_key("POLICE_EMAIL",     email)
-        # Also update the live os.environ so SMS works immediately without restart
-        if police:    os.environ["POLICE_NUMBER"]    = police
-        if ambulance: os.environ["AMBULANCE_NUMBER"] = ambulance
-        if fire:      os.environ["FIRE_NUMBER"]      = fire
-        if email:     os.environ["POLICE_EMAIL"]     = email
-        print(f"[Contacts] Saved — police={police} ambulance={ambulance} fire={fire} email={email}")
+        police      = str(data.get("police",      "")).strip()
+        ambulance   = str(data.get("ambulance",   "")).strip()
+        fire        = str(data.get("fire",        "")).strip()
+        email       = str(data.get("email",       "")).strip()
+        webhook_url = str(data.get("webhook_url", "")).strip()
+        if police:      _write_env_key("POLICE_NUMBER",        police)
+        if ambulance:   _write_env_key("AMBULANCE_NUMBER",     ambulance)
+        if fire:        _write_env_key("FIRE_NUMBER",          fire)
+        if email:       _write_env_key("POLICE_EMAIL",         email)
+        if webhook_url: _write_env_key("CATALYST_WEBHOOK_URL", webhook_url)
+        # Also update live os.environ so it takes effect immediately (no restart needed)
+        if police:      os.environ["POLICE_NUMBER"]        = police
+        if ambulance:   os.environ["AMBULANCE_NUMBER"]     = ambulance
+        if fire:        os.environ["FIRE_NUMBER"]          = fire
+        if email:       os.environ["POLICE_EMAIL"]         = email
+        if webhook_url: os.environ["CATALYST_WEBHOOK_URL"] = webhook_url
+        print(f"[Contacts] Saved — police={police} ambulance={ambulance} "
+              f"fire={fire} email={email} webhook_url={webhook_url}")
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/get_contacts")
 def get_contacts():
-    return jsonify(_read_env_contacts())
+    c = _read_env_contacts()
+    c["webhook_url"] = os.environ.get("CATALYST_WEBHOOK_URL", "")
+    return jsonify(c)
 
 # ─── Phone IP-camera GPS  POST /phone/location ───────────────────
 # The phone camera app POSTs its GPS here periodically.
@@ -2257,9 +2331,15 @@ td{padding:3px 4px;border-bottom:1px solid #21262d}
           <label>📧 Police email (optional)</label>
           <input id="cn-email" type="email" placeholder="officer@police.gov.in">
         </div>
+        <div style="margin-top:8px;border-top:1px solid #30363d;padding-top:8px">
+          <label style="color:#58a6ff">🌐 Catalyst Backend URL <span style="color:#f59e0b;font-size:9px">(required for Police Alerts)</span></label>
+          <input id="cn-webhook" type="url" placeholder="https://vigilante-vanguard-....catalystappsail.in/api/v1/rpi/incident"
+            style="font-size:10px">
+          <div id="webhook-status" style="font-size:10px;margin-top:3px;color:#8b949e"></div>
+        </div>
       </div>
       <button class="cbtn-save" onclick="saveContacts()">💾 Save to Pi .env</button>
-      <div class="csaved" id="csaved">✓ Saved! Numbers active immediately.</div>
+      <div class="csaved" id="csaved">✓ Saved! Demo accident will now appear in Police Alerts.</div>
     </div>
 
   </div>
@@ -2304,22 +2384,32 @@ function clearPlates(){ fetch("/clear_plates",{method:"POST"}); }
 
 // ── Test contacts ─────────────────────────────────────────────
 function saveContacts(){
-  const police   = document.getElementById("cn-police").value.trim();
-  const ambulance= document.getElementById("cn-ambulance").value.trim();
-  const fire     = document.getElementById("cn-fire").value.trim();
-  const email    = document.getElementById("cn-email").value.trim();
-  if(!police && !ambulance && !fire && !email){
-    alert("Enter at least one number or email."); return;
+  const police      = document.getElementById("cn-police").value.trim();
+  const ambulance   = document.getElementById("cn-ambulance").value.trim();
+  const fire        = document.getElementById("cn-fire").value.trim();
+  const email       = document.getElementById("cn-email").value.trim();
+  const webhook_url = document.getElementById("cn-webhook").value.trim();
+  if(!police && !ambulance && !fire && !email && !webhook_url){
+    alert("Enter at least one field."); return;
+  }
+  // Validate webhook URL looks right
+  if(webhook_url && !webhook_url.includes("/api/v1/rpi/incident")){
+    if(!confirm("URL doesn't end in /api/v1/rpi/incident — are you sure?\n\n"+webhook_url)) return;
   }
   fetch("/save_contacts",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({police, ambulance, fire, email})
+    body: JSON.stringify({police, ambulance, fire, email, webhook_url})
   }).then(r=>r.json()).then(d=>{
     if(d.ok){
       const el = document.getElementById("csaved");
       el.style.display="block";
-      setTimeout(()=>{ el.style.display="none"; }, 3000);
+      if(webhook_url){
+        const ws = document.getElementById("webhook-status");
+        ws.style.color="#22c55e";
+        ws.innerText="✓ Catalyst URL saved — demo accidents will now appear in Police Alerts";
+      }
+      setTimeout(()=>{ el.style.display="none"; }, 4000);
     } else {
       alert("Save failed: "+(d.error||"unknown error"));
     }
@@ -2328,10 +2418,20 @@ function saveContacts(){
 
 // ── Pre-fill contacts from server on load ─────────────────────
 fetch("/get_contacts").then(r=>r.json()).then(d=>{
-  if(d.police)    document.getElementById("cn-police").value    = d.police;
-  if(d.ambulance) document.getElementById("cn-ambulance").value = d.ambulance;
-  if(d.fire)      document.getElementById("cn-fire").value      = d.fire;
-  if(d.email)     document.getElementById("cn-email").value     = d.email;
+  if(d.police)      document.getElementById("cn-police").value    = d.police;
+  if(d.ambulance)   document.getElementById("cn-ambulance").value = d.ambulance;
+  if(d.fire)        document.getElementById("cn-fire").value      = d.fire;
+  if(d.email)       document.getElementById("cn-email").value     = d.email;
+  if(d.webhook_url){
+    document.getElementById("cn-webhook").value = d.webhook_url;
+    const ws = document.getElementById("webhook-status");
+    ws.style.color="#22c55e";
+    ws.innerText="✓ Catalyst URL configured — demo accidents send to Police Alerts";
+  } else {
+    const ws = document.getElementById("webhook-status");
+    ws.style.color="#f59e0b";
+    ws.innerText="⚠ Not set — demo accidents won't appear in Police Alerts until you paste the URL and save";
+  }
 }).catch(()=>{});
 
 function fmtBool(v,yes,no){ return v ? yes : no; }
