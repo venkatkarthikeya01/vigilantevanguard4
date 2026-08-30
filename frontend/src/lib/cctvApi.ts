@@ -609,3 +609,56 @@ export async function stratusSync(): Promise<{
   const r = await apiClient.post('/training/stratus/sync', {})
   return r.data
 }
+
+// ── Accident model (27-class) ──────────────────────────────────────────────
+
+export async function fetchAccidentLabels(): Promise<{
+  labels: string[]
+  n_classes: number
+  image_counts: Record<string, number>
+  total_images: number
+}> {
+  const r = await apiClient.get('/training/accident-labels')
+  return r.data
+}
+
+export async function fetchAccidentStatus(): Promise<{
+  n_classes: number
+  total_images: number
+  images_by_class: Record<string, number>
+  retrain_pending: boolean
+  retrain_queued: number
+  stratus_bucket: string
+  stratus_prefix: string
+  ready_for_training: boolean
+  recommended_min_per_class: number
+}> {
+  const r = await apiClient.get('/training/accident/status')
+  return r.data
+}
+
+export async function fetchAccidentDataset(label?: string): Promise<{
+  images: Array<{ class_name: string; filename: string; file_size_kb: number; uploaded_at: string; stratus_path: string }>
+  total: number
+  by_class: Record<string, number>
+}> {
+  const r = await apiClient.get('/training/accident/dataset', { params: label ? { label } : undefined })
+  return r.data
+}
+
+export async function uploadAccidentImages(
+  files: File[],
+  label: string,
+  onProgress?: (pct: number) => void,
+): Promise<{ saved: number; errors: string[]; label: string }> {
+  const fd = new FormData()
+  fd.append('label', label)
+  files.forEach(f => fd.append('files', f))
+  const r = await apiClient.post('/training/accident/upload', fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: e => {
+      if (onProgress && e.total) onProgress(Math.round(e.loaded / e.total * 100))
+    },
+  })
+  return r.data
+}

@@ -828,6 +828,42 @@ INCIDENT_LABELS = [
     "Normal / No Incident",
 ]
 
+# ── 27-class accident model labels (matches HEF output, authoritative) ────────
+ACCIDENT_MODEL_LABELS = [
+    "accident",
+    "ambulance",
+    "auto_rickshaw",
+    "bus",
+    "car",
+    "damaged_vehicle",
+    "fallen_injured_person",
+    "firetruck",
+    "license_plate",
+    "motorcycle",
+    "person",
+    "police_vehicle",
+    "road_debris",
+    "tipped_over",
+    "truck",
+    "vehicle_fire",
+    "damaged_head_light",
+    "damaged_hood",
+    "damaged_trunk",
+    "damaged_window",
+    "damaged_windscreen",
+    "damaged_bumper",
+    "damaged_door",
+    "damaged_fender",
+    "damaged_mirror_glass",
+    "dent_or_scratch",
+    "missing_grille",
+]
+
+# Stratus folder for accident model training images
+_ACCIDENT_STRATUS_PREFIX = "accident_images"
+# In-memory index: class_name → list of {path, stratus_path, uploaded_at}
+_ACCIDENT_IMAGES: List[Dict[str, Any]] = []
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1719,8 +1755,20 @@ def learn_from_feedback(frame_bytes: bytes, incident_type: str, is_false_alarm: 
         return False
 
     label = "Normal / No Incident" if is_false_alarm else incident_type
-    if label not in INCIDENT_LABELS:
-        return False
+    # Accept both generic CCTV labels and 27-class accident model labels
+    if label not in INCIDENT_LABELS and label not in ACCIDENT_MODEL_LABELS:
+        # Map accident model classes to nearest INCIDENT_LABELS entry
+        _ACCIDENT_TO_INCIDENT = {
+            "accident": "Road Accident", "damaged_vehicle": "Road Accident",
+            "fallen_injured_person": "Person Unconscious", "vehicle_fire": "Fire / Smoke",
+            "road_debris": "Road Accident", "tipped_over": "Road Accident",
+        }
+        mapped = _ACCIDENT_TO_INCIDENT.get(label)
+        if mapped:
+            label = mapped
+        else:
+            # Store under Road Accident as safe default for unknown accident classes
+            label = "Road Accident"
 
     feat = _compute_feature(frame_bytes)
     if feat is None:
@@ -1845,6 +1893,150 @@ async def training_health():
 @router.get("/labels")
 async def get_labels():
     return {"labels": INCIDENT_LABELS}
+
+
+# =============================================================================
+#  ACCIDENT MODEL — 27-class dataset management
+# =============================================================================
+
+@router.get("/accident-labels")
+async def get_accident_labels():
+    """Return the 27-class accident model label list with per-class image counts."""
+    counts: Dict[str, int] = {}
+    for cls in ACCIDENT_MODEL_LABELS:
+        safe = cls.replace(" ", "_").lower()
+        d = os.path.join(TRAINING_DATA_DIR, "accident_images", safe)
+        counts[cls] = len([f for f in os.listdir(d) if f.lower().endswith((".jpg",".jpeg",".png"))]) if os.path.isdir(d) else 0
+    return {
+        "labels": ACCIDENT_MODEL_LABELS,
+        "n_classes": len(ACCIDENT_MODEL_LABELS),
+        "image_counts": counts,
+        "total_images": sum(counts.values()),
+    }
+
+
+@router.post("/accident/upload")
+async def upload_accident_images(
+    files: List[UploadFile] = File(...),
+    label: str = Form(...),
+    current_user: AuthUser = Depends(verify_catalyst_token),
+):
+    """
+    Upload images for a specific 27-class accident model class.
+    Saves to disk + Catalyst Stratus. Auto-schedules retrain.
+    """
+    if label not in ACCIDENT_MODEL_LABELS:
+        raise HTTPException(400, f"Unknown label '{label}'.")
+
+    safe = label.replace(" ", "_").lower()
+    dest_dir = os.path.join(TRAINING_DATA_DIR, "accident_images", safe)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    saved: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    _ACC_MAP = {
+        "accident": "Road Accident", "damaged_vehicle": "Road Accident",
+        "vehicle_fire": "Fire / Smoke", "fallen_injured_person": "Person Unconscious",
+        "road_debris": "Road Accident", "tipped_over": "Road Accident",
+    }
+
+    for f in files:
+        try:
+            ext = os.path.splitext(f.filename or "")[-1].lower()
+            if ext not in {".jpg", ".jpeg", ".png"}:
+                errors.append(f"{f.filename}: unsupported format")
+                continue
+            content = await f.read()
+            if len(content) > 20 * 1024 * 1024:
+                errors.append(f"{f.filename}: too large (max 20 MB)")
+                continue
+
+            import hashlib as _hl
+            img_hash   = _hl.md5(content).hexdigest()[:12]
+            disk_fname = f"acc_{img_hash}{ext}"
+            disk_path  = os.path.join(dest_dir, disk_fname)
+            if not os.path.exists(disk_path):
+                with open(disk_path, "wb") as fh:
+                    fh.write(content)
+
+            stratus_path = f"{_ACCIDENT_STRATUS_PREFIX}/{safe}/{disk_fname}"
+            entry: Dict[str, Any] = {
+                "class_name":   label,
+                "filename":     disk_fname,
+                "disk_path":    disk_path,
+                "stratus_path": stratus_path,
+                "file_size_kb": round(len(content) / 1024, 1),
+                "uploaded_at":  time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            _ACCIDENT_IMAGES.append(entry)
+            saved.append(entry)
+
+            # Background: Stratus upload + histogram index + _SAMPLES registration
+            def _bg(c=content, sp=stratus_path, lbl=label, dp=disk_path, fn=disk_fname):
+                _stratus_upload(c, sp)
+                feat = _compute_feature(c)
+                if feat is not None:
+                    hist_label = _ACC_MAP.get(lbl, "Road Accident")
+                    _add_to_hist_index(hist_label, feat, f"acc_{lbl}_{time.time()}", _save=True)
+                sid = _sample_id()
+                _SAMPLES.insert(0, {
+                    "sample_id":        sid,
+                    "label":            lbl,
+                    "filename":         fn,
+                    "file_type":        "image",
+                    "file_ext":         os.path.splitext(fn)[-1],
+                    "file_size_kb":     round(len(c) / 1024, 1),
+                    "camera_id":        "ACCIDENT-UPLOAD",
+                    "notes":            f"Accident model class: {lbl}",
+                    "thumbnail":        "",
+                    "disk_path":        dp,
+                    "stratus_path":     sp,
+                    "verified":         True,
+                    "used_in_training": True,
+                    "uploaded_at":      time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "indexed":          True,
+                    "accident_class":   lbl,
+                })
+            threading.Thread(target=_bg, daemon=True).start()
+        except Exception as exc:
+            errors.append(f"{f.filename}: {exc}")
+
+    if saved:
+        _schedule_feedback_retrain()
+
+    return {"saved": len(saved), "errors": errors, "label": label, "files": saved}
+
+
+@router.get("/accident/dataset")
+async def get_accident_dataset(label: Optional[str] = None):
+    """List accident training images, optionally filtered by class."""
+    data = _ACCIDENT_IMAGES if not label else [i for i in _ACCIDENT_IMAGES if i["class_name"] == label]
+    counts: Dict[str, int] = {cls: sum(1 for i in _ACCIDENT_IMAGES if i["class_name"] == cls) for cls in ACCIDENT_MODEL_LABELS}
+    return {"images": data, "total": len(data), "by_class": counts}
+
+
+@router.get("/accident/status")
+async def get_accident_status():
+    """Summary of accident model training dataset and retrain state."""
+    counts: Dict[str, int] = {}
+    total = 0
+    for cls in ACCIDENT_MODEL_LABELS:
+        safe = cls.replace(" ", "_").lower()
+        d = os.path.join(TRAINING_DATA_DIR, "accident_images", safe)
+        n = len([f for f in os.listdir(d) if f.lower().endswith((".jpg",".jpeg",".png"))]) if os.path.isdir(d) else 0
+        counts[cls] = n
+        total += n
+    return {
+        "n_classes":          len(ACCIDENT_MODEL_LABELS),
+        "total_images":       total,
+        "images_by_class":    counts,
+        "retrain_pending":    _FEEDBACK_RETRAIN_TIMER is not None,
+        "retrain_queued":     _FEEDBACK_PENDING_COUNT,
+        "stratus_bucket":     _STRATUS_BUCKET,
+        "stratus_prefix":     _ACCIDENT_STRATUS_PREFIX,
+        "ready_for_training": total >= 10,
+        "recommended_min_per_class": 50,
+    }
 
 
 @router.get("/dataset")

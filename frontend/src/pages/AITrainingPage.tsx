@@ -20,6 +20,7 @@ import {
   fetchTrainingSessions, startTraining, cancelTraining,
   fetchCurrentModel, extractVideoFrames, triggerRetrainNow,
   uploadYoloModel, stratusSync,
+  fetchAccidentLabels, fetchAccidentStatus, uploadAccidentImages,
   type TrainingSample, type TrainingSession, type DatasetStats,
 } from '@/lib/cctvApi'
 import { cn } from '@/lib/utils'
@@ -1855,7 +1856,181 @@ function ModelUploadPanel() {
   )
 }
 
-type LeftTab = 'scan' | 'upload' | 'video' | 'ipcam' | 'train' | 'test' | 'model' | 'hef'
+// ═══════════════════════════════════════════════════════════════
+//  ACCIDENT MODEL PANEL — 27-class image upload + retrain status
+// ═══════════════════════════════════════════════════════════════
+
+const ACC_CLASS_COLOURS: Record<string, string> = {
+  accident: '#ef4444', ambulance: '#22c55e', auto_rickshaw: '#f97316',
+  bus: '#3b82f6', car: '#6366f1', damaged_vehicle: '#f59e0b',
+  fallen_injured_person: '#ec4899', firetruck: '#dc2626', license_plate: '#94a3b8',
+  motorcycle: '#8b5cf6', person: '#06b6d4', police_vehicle: '#2563eb',
+  road_debris: '#a16207', tipped_over: '#b45309', truck: '#0891b2',
+  vehicle_fire: '#e11d48', damaged_head_light: '#78716c', damaged_hood: '#71717a',
+  damaged_trunk: '#6b7280', damaged_window: '#64748b', damaged_windscreen: '#475569',
+  damaged_bumper: '#7c3aed', damaged_door: '#a855f7', damaged_fender: '#9333ea',
+  damaged_mirror_glass: '#c026d3', dent_or_scratch: '#db2777', missing_grille: '#be185d',
+}
+
+function AccidentModelPanel() {
+  const qc = useQueryClient()
+  const [selectedClass, setSelectedClass] = useState<string>('')
+  const [files,         setFiles]         = useState<File[]>([])
+  const [uploading,     setUploading]     = useState(false)
+  const [progress,      setProgress]      = useState(0)
+  const [msg,           setMsg]           = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const labelsQ  = useQuery({ queryKey: ['accident-labels'],  queryFn: fetchAccidentLabels,  refetchInterval: 15_000 })
+  const statusQ  = useQuery({ queryKey: ['accident-status'],  queryFn: fetchAccidentStatus,  refetchInterval: 10_000 })
+
+  const counts  = labelsQ.data?.image_counts ?? {}
+  const total   = statusQ.data?.total_images ?? 0
+  const pending = statusQ.data?.retrain_pending ?? false
+  const queued  = statusQ.data?.retrain_queued ?? 0
+  const labels  = labelsQ.data?.labels ?? []
+
+  async function doUpload() {
+    if (!selectedClass || files.length === 0) return
+    setUploading(true); setProgress(0); setMsg(null)
+    try {
+      const result = await uploadAccidentImages(files, selectedClass, p => setProgress(p))
+      if (result.errors.length > 0) {
+        setMsg({ type: 'err', text: `${result.saved} saved, ${result.errors.length} error(s): ${result.errors[0]}` })
+      } else {
+        setMsg({ type: 'ok', text: `✓ ${result.saved} image${result.saved !== 1 ? 's' : ''} uploaded for "${selectedClass}". Auto-retrain scheduled.` })
+      }
+      setFiles([])
+      qc.invalidateQueries({ queryKey: ['accident-labels'] })
+      qc.invalidateQueries({ queryKey: ['accident-status'] })
+    } catch (e: any) {
+      setMsg({ type: 'err', text: e?.response?.data?.detail ?? e?.message ?? 'Upload failed' })
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-3 text-xs">
+      {/* Header card */}
+      <div className="rounded-xl border border-orange-800/40 bg-orange-950/10 px-3 py-2 text-[10px] text-orange-300">
+        <p className="font-semibold mb-0.5 flex items-center gap-1.5">
+          <Cpu className="h-3.5 w-3.5" /> 27-Class Accident Model Training
+        </p>
+        <p className="text-orange-400/70">
+          Upload labelled images for each class. Images go to <span className="font-semibold text-orange-200">Catalyst Stratus</span> and the model
+          <span className="text-orange-200 font-semibold"> auto-retrains</span> after every upload or officer approve/reject.
+        </p>
+      </div>
+
+      {/* Auto-retrain indicator */}
+      {(pending || queued > 0) && (
+        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-blue-950/30 border border-blue-700/30 text-[10px] text-blue-300">
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+          Auto-retrain queued ({queued} pending) — runs in ~30 s
+        </div>
+      )}
+
+      {/* Total count */}
+      <div className="flex items-center justify-between px-1">
+        <span className="text-[10px] text-gray-400">{total} images across {labels.length} classes</span>
+        <button onClick={() => { qc.invalidateQueries({ queryKey: ['accident-labels'] }); qc.invalidateQueries({ queryKey: ['accident-status'] }) }}
+          className="text-gray-500 hover:text-white p-0.5 rounded"><RefreshCw className="h-3 w-3" /></button>
+      </div>
+
+      {/* Class grid */}
+      <div className="grid grid-cols-2 gap-1 max-h-52 overflow-y-auto pr-1">
+        {labels.map((cls: string) => {
+          const n = counts[cls] ?? 0
+          const col = ACC_CLASS_COLOURS[cls] ?? '#6b7280'
+          return (
+            <button key={cls} onClick={() => setSelectedClass(c => c === cls ? '' : cls)}
+              className={cn(
+                'flex items-center justify-between px-2 py-1.5 rounded-lg border text-left transition-colors',
+                selectedClass === cls
+                  ? 'border-orange-500 bg-orange-950/30 text-white'
+                  : 'border-gray-700/60 bg-gray-800/30 text-gray-300 hover:border-gray-600 hover:bg-gray-800/50'
+              )}>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: col }} />
+                <span className="text-[9px] truncate font-medium leading-tight">{cls.replace(/_/g, ' ')}</span>
+              </div>
+              <span className={cn(
+                'text-[9px] font-bold flex-shrink-0 ml-1',
+                n === 0 ? 'text-red-400' : n < 10 ? 'text-yellow-400' : 'text-green-400'
+              )}>{n}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Upload section */}
+      <div className="border-t border-gray-800 pt-3 space-y-2">
+        <p className="text-[10px] text-gray-400 font-medium">
+          {selectedClass
+            ? <span>Uploading for: <span className="text-orange-300 font-bold">{selectedClass.replace(/_/g, ' ')}</span> ({counts[selectedClass] ?? 0} images)</span>
+            : 'Select a class above to upload images'}
+        </p>
+
+        {/* Drop zone */}
+        <label className={cn(
+          'flex flex-col items-center gap-1.5 border-2 border-dashed rounded-xl p-3 cursor-pointer transition-colors',
+          selectedClass ? 'border-gray-700 hover:border-orange-500' : 'border-gray-800 opacity-50 cursor-not-allowed'
+        )}>
+          <CloudUpload className="h-6 w-6 text-gray-500" />
+          <span className="text-[10px] text-gray-400">
+            {files.length > 0 ? `${files.length} file${files.length !== 1 ? 's' : ''} selected` : 'Click to pick images'}
+          </span>
+          <span className="text-[9px] text-gray-600">.jpg · .jpeg · .png · multiple allowed</span>
+          <input ref={fileRef} type="file" accept="image/*" multiple disabled={!selectedClass}
+            onChange={e => { if (e.target.files) setFiles(Array.from(e.target.files)); e.target.value = '' }}
+            className="hidden" />
+        </label>
+
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {files.slice(0, 8).map((f, i) => (
+              <span key={i} className="px-1.5 py-0.5 rounded bg-gray-800 text-[9px] text-gray-300 border border-gray-700 truncate max-w-[120px]">{f.name}</span>
+            ))}
+            {files.length > 8 && <span className="px-1.5 py-0.5 rounded bg-gray-700 text-[9px] text-gray-400">+{files.length - 8} more</span>}
+          </div>
+        )}
+
+        {uploading && (
+          <div>
+            <div className="flex justify-between text-[10px] text-gray-400 mb-1">
+              <span>Uploading to Stratus…</span><span>{progress}%</span>
+            </div>
+            <div className="w-full bg-gray-800 rounded-full h-1"><div className="bg-orange-500 h-1 rounded-full transition-all" style={{ width: `${progress}%` }} /></div>
+          </div>
+        )}
+
+        {msg && (
+          <p className={cn('text-[10px] px-2 py-1 rounded', msg.type === 'ok' ? 'text-green-400 bg-green-950/30' : 'text-red-400 bg-red-950/30')}>
+            {msg.text}
+          </p>
+        )}
+
+        <button onClick={doUpload}
+          disabled={!selectedClass || files.length === 0 || uploading}
+          className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-orange-700 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-semibold transition-colors">
+          <CloudUpload className="h-3.5 w-3.5" />
+          {uploading ? `Uploading ${progress}%…` : `Upload ${files.length > 0 ? files.length + ' image' + (files.length !== 1 ? 's' : '') : 'Images'}`}
+        </button>
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center gap-3 text-[9px] text-gray-500 pt-1">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400" />0 images</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400" />1–9</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-400" />10+</span>
+        <span className="ml-auto">Recommended: 50+ per class</span>
+      </div>
+    </div>
+  )
+}
+
+type LeftTab = 'scan' | 'upload' | 'video' | 'ipcam' | 'train' | 'test' | 'model' | 'hef' | 'accident'
 
 export default function AITrainingPage() {
   const qc = useQueryClient()
@@ -1922,8 +2097,9 @@ export default function AITrainingPage() {
     { id: 'ipcam',  icon: <Camera className="h-3.5 w-3.5" />,       label: 'IP Cam',  colour: '#22c55e' },
     { id: 'train',  icon: <Play className="h-3.5 w-3.5" />,         label: 'Train',   badge: sessions.filter(s => s.status === 'RUNNING').length },
     { id: 'test',   icon: <FlaskConical className="h-3.5 w-3.5" />, label: 'Test AI' },
-    { id: 'model',  icon: <Cpu className="h-3.5 w-3.5" />,          label: 'Model' },
-    { id: 'hef',    icon: <PackageOpen className="h-3.5 w-3.5" />,  label: 'Upload Model', colour: '#a855f7' },
+    { id: 'model',    icon: <Cpu className="h-3.5 w-3.5" />,          label: 'Model' },
+    { id: 'hef',      icon: <PackageOpen className="h-3.5 w-3.5" />,  label: 'Upload Model', colour: '#a855f7' },
+    { id: 'accident', icon: <Zap className="h-3.5 w-3.5" />,          label: '27-Class', colour: '#f97316' },
   ]
 
   return (
@@ -2110,6 +2286,12 @@ export default function AITrainingPage() {
             {leftTab === 'hef' && (
               <div className="space-y-3">
                 <ModelUploadPanel />
+              </div>
+            )}
+
+            {leftTab === 'accident' && (
+              <div className="space-y-3">
+                <AccidentModelPanel />
               </div>
             )}
 
