@@ -524,18 +524,28 @@ def _run_tracker(dets: list) -> list:
 # ══════════════════════════════════════════════════════════════════
 
 def _find_usb_camera():
-    """Return path to C270 by-id, or first probed /dev/video* that works."""
-    for p in glob.glob("/dev/v4l/by-id/*"):
-        if any(k in p.lower() for k in ("logitech","c270","webcam")):
+    """
+    Return the lowest numeric index whose VideoCapture opens AND yields a frame.
+    Tries by-id symlink first (most reliable), then probes indices 0-9.
+    Returns an int index (preferred for numeric open) or a string path.
+    """
+    # 1. by-id symlink — most reliable on RPi OS
+    for p in sorted(glob.glob("/dev/v4l/by-id/*")):
+        if any(k in p.lower() for k in ("logitech", "c270", "webcam", "usb")):
             return p
-    for dev in sorted(glob.glob("/dev/video*"),
-                      key=lambda x: int(re.search(r"(\d+)$", x).group(1))):
+
+    # 2. Probe numeric indices 0-9 using CAP_V4L2 + isOpened() only
+    #    (don't try to read a frame here — too slow and noisy in the log)
+    for idx in range(10):
+        dev_path = f"/dev/video{idx}"
+        if not os.path.exists(dev_path):
+            continue
         try:
-            cap = cv2.VideoCapture(dev, cv2.CAP_V4L2)
-            if not cap.isOpened(): cap.release(); continue
-            ret, frm = cap.read(); cap.release()
-            if ret and frm is not None:
-                return dev
+            cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+            opened = cap.isOpened()
+            cap.release()
+            if opened:
+                return idx   # return int — use cv2.VideoCapture(int) later
         except Exception:
             pass
     return None
@@ -554,42 +564,46 @@ def _open_cap(mode):
             return cap, PHONE_URL
         cap.release()
         return None, None
-    else:
-        src = _find_usb_camera()
-        if src is None:
-            print("[Camera] No USB camera found")
-            return None, None
-        cap = cv2.VideoCapture(src, cv2.CAP_V4L2)
-        # MJPG mode is required — raw YUYV on C270 tops out at ~5fps
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        cap.set(cv2.CAP_PROP_FPS,          30)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
-        if cap.isOpened():
-            ret, test = cap.read()
-            if ret and test is not None:
-                print(f"[Camera] ✓ C270 opened {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x"
-                      f"{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} "
-                      f"@ {int(cap.get(cv2.CAP_PROP_FPS))}fps  src={src}")
-                return cap, src
-            # Frame read failed — try again with index 0 fallback
-            cap.release()
-        # Fallback: try /dev/video0 directly without by-id path
-        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-        cap.set(cv2.CAP_PROP_FPS,          30)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
-        if cap.isOpened():
-            ret, test = cap.read()
-            if ret and test is not None:
-                print(f"[Camera] ✓ C270 fallback /dev/video0 opened")
-                return cap, "/dev/video0"
-            cap.release()
-        print("[Camera] ✗ C270 opened but no frames — check USB connection")
+
+    # ── USB camera ──────────────────────────────────────────────────
+    src = _find_usb_camera()
+    if src is None:
+        print("[Camera] No USB camera found on /dev/video0-9")
         return None, None
+
+    # Open by int index (avoids V4L2 "by name" warning) or by path
+    cap = cv2.VideoCapture(src, cv2.CAP_V4L2)
+    src_label = f"/dev/video{src}" if isinstance(src, int) else src
+
+    # MJPG mode required — raw YUYV on C270 tops out at ~5fps
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_FPS,          30)
+    cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
+
+    if not cap.isOpened():
+        cap.release()
+        print(f"[Camera] ✗ Could not open {src_label}")
+        return None, None
+
+    # Read up to 5 frames — some UVC cameras need a few cycles to warm up
+    ret, test = False, None
+    for _ in range(5):
+        ret, test = cap.read()
+        if ret and test is not None:
+            break
+        time.sleep(0.05)
+
+    if ret and test is not None:
+        print(f"[Camera] ✓ C270 opened {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x"
+              f"{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} "
+              f"@ {int(cap.get(cv2.CAP_PROP_FPS))}fps  src={src_label}")
+        return cap, src_label
+
+    cap.release()
+    print(f"[Camera] ✗ {src_label} opened but no frames — check USB cable")
+    return None, None
 
 # ══════════════════════════════════════════════════════════════════
 # CAMERA THREAD
@@ -619,7 +633,8 @@ def camera_thread():
                 print(f"[Camera] ✗ Failed to open {current_mode}")
 
         if cap is None:
-            time.sleep(0.3); continue
+            time.sleep(3.0)   # retry every 3s — camera may not be ready yet at boot
+            continue
 
         ret, frame = cap.read()
         if not ret:

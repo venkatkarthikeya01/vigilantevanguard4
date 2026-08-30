@@ -1,19 +1,66 @@
+# /etc/systemd/system/vigilante.service
+# VigilanteVanguard — RPi5 auto-start systemd service
+#
+# INSTALL:
+#   sudo cp vigilante_vanguard_rpi/scripts/vigilante.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable vigilante
+#   sudo systemctl start vigilante
+#
+# MANAGE:
+#   sudo systemctl status vigilante    # check live status
+#   sudo journalctl -u vigilante -f    # tail logs
+#   sudo systemctl restart vigilante   # restart after changes
+#   sudo systemctl stop vigilante      # stop manually
+
 [Unit]
-Description=VigilanteVanguard Catalyst Pipeline v5 (RPi5)
-Documentation=https://github.com/venkatkarthikeya01/vigilantevanguard4
-After=network.target
+Description=VigilanteVanguard Accident Detection System
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/vigilante-vanguard/rpi_pipeline
-ExecStart=/usr/bin/python3 /home/pi/vigilante-vanguard/rpi_pipeline/catalyst_pipeline.py
-Restart=always
-RestartSec=5
+User=karthikeya
+Group=karthikeya
+WorkingDirectory=/home/karthikeya/vigilante_vanguard_rpi
+
+# Load .env file — systemd reads key=value pairs directly
+EnvironmentFile=-/home/karthikeya/vigilante_vanguard_rpi/.env
+
+# Main process
+ExecStart=/usr/bin/python3 /home/karthikeya/vigilante_vanguard_rpi/catalyst_pipeline.py
+
+# Restart policy — restart after 10s if crash
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+# Logging — journald captures stdout/stderr
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=vigilante
-Environment=PYTHONUNBUFFERED=1
+
+# Resource limits
+# Give it access to GPU/NPU device nodes
+# Hailo PCIe device
+DeviceAllow=/dev/hailo0 rw
+# USB modem — all 4 ttyUSB ports (EG800AK exposes multiple interfaces)
+DeviceAllow=/dev/ttyUSB0 rw
+DeviceAllow=/dev/ttyUSB1 rw
+DeviceAllow=/dev/ttyUSB2 rw
+DeviceAllow=/dev/ttyUSB3 rw
+DeviceAllow=/dev/ttyS0 rw
+# Webcam
+DeviceAllow=/dev/video0 rw
+DeviceAllow=/dev/video1 rw
+
+# Allow opening GPIO
+SupplementaryGroups=gpio video dialout plugdev i2c
+
+# Kill signal
+KillSignal=SIGTERM
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
