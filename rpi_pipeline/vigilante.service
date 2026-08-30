@@ -1,0 +1,19 @@
+[Unit]
+Description=VigilanteVanguard Catalyst Pipeline v5 (RPi5)
+Documentation=https://github.com/venkatkarthikeya01/vigilantevanguard4
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/vigilante-vanguard/rpi_pipeline
+ExecStart=/usr/bin/python3 /home/pi/vigilante-vanguard/rpi_pipeline/catalyst_pipeline.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vigilante
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
