@@ -611,9 +611,11 @@ def _open_cap(mode):
 
 def camera_thread():
     global _latest_frame
-    active_mode = None
-    cap         = None
-    fps_t0 = time.time(); fps_n = 0
+    active_mode  = None
+    cap          = None
+    fps_t0       = time.time()
+    fps_n        = 0
+    _retry_delay = 3.0   # seconds between reconnect attempts
 
     while True:
         # ── Detect switch request ────────────────────────────────
@@ -629,18 +631,26 @@ def camera_thread():
                 _latest_frame = None
             if cap:
                 print(f"[Camera] ✓ Opened: {src}")
+                _retry_delay = 3.0
             else:
-                print(f"[Camera] ✗ Failed to open {current_mode}")
+                print(f"[Camera] ✗ Failed to open {current_mode} — will retry every {_retry_delay:.0f}s")
 
+        # ── Camera not open: keep retrying (auto-reconnect) ──────
         if cap is None:
-            time.sleep(3.0)   # retry every 3s — camera may not be ready yet at boot
+            time.sleep(_retry_delay)
+            _retry_delay = min(_retry_delay * 1.5, 15.0)  # back off up to 15s max
+            # Force re-probe on next loop iteration
+            active_mode = None
             continue
 
         ret, frame = cap.read()
         if not ret:
-            # Reconnect on failure
+            # Frame read failed — release and reconnect immediately
+            print(f"[Camera] ✗ Frame read failed ({current_mode}) — reconnecting…")
             cap.release(); cap = None
-            time.sleep(0.1); continue
+            active_mode = None   # force re-open on next loop
+            time.sleep(0.5)
+            continue
 
         with _frame_lock:
             _latest_frame = frame        # overwrite — never queue
@@ -1824,23 +1834,114 @@ def clear_plates():
     return jsonify({"ok":True})
 
 # ─── Demo accident ───────────────────────────────────────────────
+# Accident type choices available from the Pi dashboard
+_DEMO_ACCIDENT_TYPES = [
+    "Road Accident",
+    "Vehicle Collision",
+    "Vehicle Fire",
+    "Person Down / Injured",
+    "Multi-Vehicle Pile-up",
+    "Hit and Run",
+    "Rollover",
+    "Head-on Collision",
+]
+
+# Map demo type → class names used for Catalyst push
+_DEMO_TYPE_CLASSES = {
+    "Road Accident":          ["accident", "damaged_vehicle", "car"],
+    "Vehicle Collision":      ["car", "damaged_vehicle", "accident"],
+    "Vehicle Fire":           ["vehicle_fire", "car", "accident"],
+    "Person Down / Injured":  ["fallen_injured_person", "accident", "person"],
+    "Multi-Vehicle Pile-up":  ["accident", "car", "truck", "damaged_vehicle"],
+    "Hit and Run":            ["car", "accident", "damaged_vehicle"],
+    "Rollover":               ["tipped_over", "car", "accident"],
+    "Head-on Collision":      ["car", "accident", "damaged_vehicle"],
+}
+
 @app.route("/demo_accident", methods=["POST"])
 def demo_accident():
     with _gps_lock:   gps = dict(_gps_state)
     with _plate_lock: plate_list_now = list(_plates.keys())
     with _det_lock:   classes_now = list({d["class_name"] for d in _latest_dets})
+
+    # Accept accident_type from JSON body or form data
+    body_json = {}
+    try:
+        body_json = request.get_json(silent=True) or {}
+    except Exception:
+        pass
+    accident_type = body_json.get("accident_type", "Road Accident")
+    if accident_type not in _DEMO_ACCIDENT_TYPES:
+        accident_type = "Road Accident"
+
+    # Use live detections if available, otherwise use type-specific class list
+    if not classes_now:
+        classes_now = _DEMO_TYPE_CLASSES.get(accident_type, ["accident", "car"])
+
+    event_id = f"DEMO-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     ev = {
-        "demo":True,
-        "event_id":  f"DEMO-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "camera":    camera_mode,
-        "plates":    plate_list_now,
-        "gps":       gps,
-        "classes":   classes_now,
+        "demo":          True,
+        "event_id":      event_id,
+        "timestamp":     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "camera":        camera_mode,
+        "accident_type": accident_type,
+        "plates":        plate_list_now,
+        "gps":           gps,
+        "classes":       classes_now,
     }
     with _demo_lock:
-        _demo_state.update({"active":True,"event":ev})
-    print(f"[Demo] ⚠ DEMO TRIGGERED — {ev['event_id']}  (NOT REAL, NO SMS/CALL)")
+        _demo_state.update({"active": True, "event": ev})
+    print(f"[Demo] ⚠ DEMO TRIGGERED — {event_id}  type={accident_type}  (NOT REAL)")
+
+    # Push to Catalyst Police Alerts in background
+    if _CATALYST_AVAILABLE:
+        def _push_demo():
+            try:
+                from types import SimpleNamespace
+                lat = gps.get("lat") or 12.8606  # Nanjangud fallback
+                lng = gps.get("lng") or 76.6826
+                gps_fix = gps.get("fix", False)
+                classes = classes_now
+                # Map accident type → severity
+                sev_map = {
+                    "Vehicle Fire":          ("CRITICAL", 4),
+                    "Person Down / Injured": ("CRITICAL", 4),
+                    "Multi-Vehicle Pile-up": ("CRITICAL", 4),
+                    "Head-on Collision":     ("HIGH", 3),
+                    "Rollover":              ("HIGH", 3),
+                    "Road Accident":         ("HIGH", 3),
+                    "Vehicle Collision":     ("MEDIUM", 2),
+                    "Hit and Run":           ("HIGH", 3),
+                }
+                sev_label, sev_score = sev_map.get(accident_type, ("HIGH", 3))
+                severity_result = SimpleNamespace(
+                    severity_label    = sev_label,
+                    severity_score    = sev_score,
+                    primary_class     = classes[0] if classes else "accident",
+                    all_classes       = classes,
+                    vehicle_count     = sum(1 for c in classes if c in ("car","truck","bus","motorcycle","auto_rickshaw")),
+                    person_down       = "fallen_injured_person" in classes,
+                    fire_detected     = "vehicle_fire" in classes,
+                    rollover_detected = "tipped_over" in classes,
+                    dispatch_actions  = ["voice_police", "voice_ambulance"],
+                    description       = f"DEMO: {accident_type} — {', '.join(classes[:4])}",
+                )
+                cam_id = f"RPI5-DEMO-{camera_mode.upper()}"
+                _cat_push(
+                    incident_id     = event_id,
+                    severity_result = severity_result,
+                    lat             = lat if gps_fix else 12.8606,
+                    lng             = lng if gps_fix else 76.6826,
+                    address_short   = "Demo — Nanjangud Road" if not gps_fix else "",
+                    address_full    = "",
+                    camera_id       = cam_id,
+                    blocking        = False,
+                )
+                print(f"[Demo] Pushed to Catalyst: {event_id}  sev={sev_label}")
+            except Exception as exc:
+                print(f"[Demo] Catalyst push error: {exc}")
+        threading.Thread(target=_push_demo, daemon=True, name="demo-cat-push").start()
+
     return jsonify(ev)
 
 @app.route("/demo_reset", methods=["POST"])
@@ -2117,8 +2218,23 @@ td{padding:3px 4px;border-bottom:1px solid #21262d}
 
     <div class="card">
       <h3>⚠ Demo / Simulation Only</h3>
+      <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:4px">Accident Type</label>
+      <select id="demo-type" style="width:100%;background:#161b22;color:#c9d1d9;border:1px solid #30363d;
+        border-radius:6px;padding:6px 8px;font-size:12px;margin-bottom:8px;cursor:pointer">
+        <option>Road Accident</option>
+        <option>Vehicle Collision</option>
+        <option>Vehicle Fire</option>
+        <option>Person Down / Injured</option>
+        <option>Multi-Vehicle Pile-up</option>
+        <option>Hit and Run</option>
+        <option>Rollover</option>
+        <option>Head-on Collision</option>
+      </select>
       <button class="dbtn trig" onclick="trigDemo()">🔴 TRIGGER DEMO ACCIDENT</button>
       <button class="dbtn rst"  onclick="rstDemo()">RESET DEMO</button>
+      <div style="font-size:10px;color:#58a6ff;margin-top:6px;padding:4px 6px;background:#0d1117;border-radius:4px">
+        ⬆ Also sends alert to Catalyst Police Alerts dashboard
+      </div>
       <div class="dbanner" id="dbanner"></div>
     </div>
 
@@ -2160,16 +2276,23 @@ function switchCam(m){
 }
 
 function trigDemo(){
-  fetch("/demo_accident",{method:"POST"}).then(r=>r.json()).then(d=>{
+  const accType = document.getElementById("demo-type").value;
+  fetch("/demo_accident",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({accident_type: accType})
+  }).then(r=>r.json()).then(d=>{
     const b = document.getElementById("dbanner");
     b.className = "dbanner on";
     b.innerText =
       "⚠ DEMO / SIMULATION — NOT A REAL EMERGENCY\n\n"+
-      "Event : "+d.event_id+"\nTime  : "+d.timestamp+
+      "Type  : "+d.accident_type+
+      "\nEvent : "+d.event_id+"\nTime  : "+d.timestamp+
       "\nCamera: "+d.camera+
       "\nPlates: "+(d.plates.join(", ")||"none")+
       "\nGPS   : "+(d.gps.fix ? d.gps.lat.toFixed(5)+", "+d.gps.lng.toFixed(5) : "no fix")+
-      "\nClasses: "+(d.classes.join(", ")||"none");
+      "\nClasses: "+(d.classes.join(", ")||"none")+
+      "\n\n✓ Sent to Catalyst Police Alerts";
   });
 }
 function rstDemo(){
