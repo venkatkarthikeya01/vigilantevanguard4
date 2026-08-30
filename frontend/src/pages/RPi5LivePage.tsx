@@ -86,7 +86,7 @@ function MJPEGPanel({
 
   return (
     <div className={cn(
-      'flex flex-col rounded-xl border overflow-hidden bg-gray-900',
+      'flex flex-col rounded-xl border overflow-hidden bg-gray-900 w-full',
       expanded ? 'fixed inset-4 z-50' : 'border-gray-800',
       isActive && 'border-blue-600/60',
     )}>
@@ -125,18 +125,18 @@ function MJPEGPanel({
         </div>
       </div>
 
-      {/* Stream */}
-      <div className="relative flex-1 bg-black min-h-0">
+      {/* Stream — 16:9 aspect-ratio box, never overflows */}
+      <div className="relative w-full bg-black" style={{ aspectRatio: '16/9' }}>
         {!error ? (
           <img
             key={imgKey}
             src={streamUrl}
             alt={title}
-            className="w-full h-full object-contain"
+            className="absolute inset-0 w-full h-full object-contain"
             onError={() => setError(true)}
           />
         ) : (
-          <div className="flex flex-col items-center justify-center h-full gap-3 text-gray-600">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-600">
             <WifiOff className="h-10 w-10 opacity-20" />
             <p className="text-xs text-gray-500">Stream unavailable</p>
             <p className="text-[10px] text-gray-700 text-center max-w-[200px] break-all">{streamUrl}</p>
@@ -172,7 +172,7 @@ function MJPEGPanel({
 // ── Main page ──────────────────────────────────────────────────────
 export default function RPi5LivePage() {
   // Persisted settings
-  const [piIp,       setPiIp]       = useState(() => localStorage.getItem('vv_rpi_ip')      || '192.168.1.8')
+  const [piIp,       setPiIp]       = useState(() => localStorage.getItem('vv_rpi_ip')      || '192.168.137.186')
   const [ipCamUrl,   setIpCamUrl]   = useState(() => localStorage.getItem('vv_ipcam_url')   || 'http://192.168.1.9:8081/video')
   const [piCamLabel, setPiCamLabel] = useState(() => localStorage.getItem('vv_picam_label') || 'Pi Camera Feed')
   const [ipCamLabel, setIpCamLabel] = useState(() => localStorage.getItem('vv_ipcam_label') || 'IP Camera (Phone)')
@@ -406,13 +406,14 @@ export default function RPi5LivePage() {
       )}
 
       {/* ── Body ────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-hidden flex min-h-0">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden flex min-h-0">
 
-        {/* ── Two camera panels stacked ──────────────────────────── */}
-        <div className="flex-1 min-w-0 flex flex-col gap-3 p-3 overflow-hidden">
+        {/* ── Two camera panels side by side ─────────────────────── */}
+        <div className="flex-1 min-w-0 flex flex-col gap-3 p-3">
 
-          {/* ── Panel 1: IP Cam — direct stream (always live, shown first) ── */}
-          <div className="flex-1 min-h-0">
+          {/* ── Both panels in a responsive row ── */}
+          <div className="grid grid-cols-2 gap-3 w-full">
+            {/* Panel 1: IP Cam */}
             <MJPEGPanel
               title={`${ipCamLabel} — direct stream`}
               icon={<Wifi className="h-4 w-4" />}
@@ -426,18 +427,16 @@ export default function RPi5LivePage() {
               note={activeCam === 'usb' && piOnline
                 ? 'Direct stream from phone (always live). Click "Switch Hailo to IP Cam" to run Hailo NPU on this feed.'
                 : !piOnline
-                ? '📡 Pi is offline — this IP cam stream is your live feed. Pi inference will activate when it comes online.'
+                ? '📡 Pi is offline — this IP cam stream is your live feed.'
                 : undefined}
             />
-          </div>
 
-          {/* ── Panel 2: Pi Camera Feed — Pi annotated MJPEG stream ── */}
-          <div className="flex-1 min-h-0">
+            {/* Panel 2: Pi Camera Feed */}
             <MJPEGPanel
               title={`${piCamLabel} (via Pi · ${piIp})`}
               icon={<Camera className="h-4 w-4" />}
               badge={
-                !piOnline      ? 'Pi Offline' :
+                !piOnline           ? 'Pi Offline' :
                 activeCam === 'usb' ? '⚡ Hailo Active' : 'Pi Stream'
               }
               badgeColour={
@@ -451,9 +450,9 @@ export default function RPi5LivePage() {
               switchLabel={switching ? 'Switching…' : 'Switch Hailo to Pi Cam'}
               note={
                 !piOnline
-                  ? `⚠ Pi is offline (${piBase}). Check that the Pi is powered on and connected to the same network. The IP cam above is your live feed.`
+                  ? `⚠ Pi is offline (${piBase}). The IP cam above is your live feed.`
                   : activeCam === 'ip'
-                  ? '⚡ Hailo NPU is currently processing IP Cam — click "Switch Hailo to Pi Cam" to run inference on this camera instead.'
+                  ? '⚡ Hailo NPU on IP Cam — click "Switch Hailo to Pi Cam" to switch.'
                   : undefined
               }
             />
